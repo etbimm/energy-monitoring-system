@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 250 250" width="250" height="250">
+  <title>Sampoerna Kayoe 1978</title>
+  <defs>
+    <linearGradient id="gold" x1="0.15" y1="0" x2="0.45" y2="1">
+      <stop offset="0" stop-color="#F9E39A"/>
+      <stop offset="0.32" stop-color="#EEBC4C"/>
+      <stop offset="0.68" stop-color="#D4922A"/>
+      <stop offset="1" stop-color="#A8660F"/>
+    </linearGradient>
+    <linearGradient id="goldLeaf" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F7DC90"/>
+      <stop offset="0.45" stop-color="#E0A733"/>
+      <stop offset="1" stop-color="#A96A11"/>
+    </linearGradient>
+
+    <!-- busur teks melingkar, mengikuti cincin -->
+    <path id="ringTextTop" d="M 63,134.6 A 66,66 0 1 1 187,134.6" fill="none"/>
+    <path id="ringTextBottom" d="M 67.8,145 A 66,66 0 0 0 182.2,145" fill="none"/>
+  </defs>
+
+  <!-- latar merah -->
+  <rect width="250" height="250" fill="#A8162A"/>
+
+  <!-- pita merah di bawah wreath -->
+  <path d="M 114,192 L 108,238 L 125,224 L 143,240 L 136,192 Z" fill="#9E1626" stroke="#7C1119" stroke-width="1.2" stroke-linejoin="round"/>
+  <path d="M 125,224 L 125,193 L 136,192 L 143,240 Z" fill="#8C1220" opacity="0.8"/>
+
+  <!-- batang laurel -->
+  <path d="M 86.1,195.4 A 92,92 0 0 1 125,20" fill="none" stroke="url(#goldLeaf)" stroke-width="3.6" stroke-linecap="round"/>
+  <path d="M 163.9,195.4 A 92,92 0 0 0 125,20" fill="none" stroke="url(#goldLeaf)" stroke-width="3.6" stroke-linecap="round"/>
+
+  <!-- daun laurel -->
+  <g fill="url(#goldLeaf)" stroke="#8A560B" stroke-width="0.5">
+    <ellipse cx="171" cy="191.7" rx="6" ry="13" transform="rotate(-30 171 191.7)"/>
+    <ellipse cx="186.6" cy="180.4" rx="6" ry="13" transform="rotate(-42 186.6 180.4)"/>
+    <ellipse cx="199.4" cy="166.1" rx="6" ry="13" transform="rotate(-54 199.4 166.1)"/>
+    <ellipse cx="209.1" cy="149.5" rx="6" ry="13" transform="rotate(-66 209.1 149.5)"/>
+    <ellipse cx="214.9" cy="131.1" rx="6" ry="13" transform="rotate(-78 214.9 131.1)"/>
+    <ellipse cx="217" cy="112" rx="6" ry="13" transform="rotate(-90 217 112)"/>
+    <ellipse cx="214.9" cy="92.9" rx="6" ry="13" transform="rotate(-102 214.9 92.9)"/>
+    <ellipse cx="209.1" cy="74.5" rx="6" ry="13" transform="rotate(-114 209.1 74.5)"/>
+    <ellipse cx="199.4" cy="57.9" rx="6" ry="13" transform="rotate(-126 199.4 57.9)"/>
+    <ellipse cx="186.6" cy="43.6" rx="6" ry="13" transform="rotate(-138 186.6 43.6)"/>
+    <ellipse cx="171" cy="32.3" rx="6" ry="13" transform="rotate(-150 171 32.3)"/>
+    <ellipse cx="153.4" cy="24.5" rx="6" ry="13" transform="rotate(-162 153.4 24.5)"/>
+    <ellipse cx="134.6" cy="20.3" rx="6" ry="13" transform="rotate(-174 134.6 20.3)"/>
+    <ellipse cx="115.4" cy="20.3" rx="6" ry="13" transform="rotate(-186 115.4 20.3)"/>
+    <ellipse cx="96.6" cy="24.5" rx="6" ry="13" transform="rotate(-198 96.6 24.5)"/>
+    <ellipse cx="79" cy="32.3" rx="6" ry="13" transform="rotate(-210 79 32.3)"/>
+    <ellipse cx="63.4" cy="43.6" rx="6" ry="13" transform="rotate(-222 63.4 43.6)"/>
+    <ellipse cx="50.6" cy="57.9" rx="6" ry="13" transform="rotate(-234 50.6 57.9)"/>
+    <ellipse cx="40.9" cy="74.5" rx="6" ry="13" transform="rotate(-246 40.9 74.5)"/>
+    <ellipse cx="35.1" cy="92.9" rx="6" ry="13" transform="rotate(-258 35.1 92.9)"/>
+    <ellipse cx="33" cy="112" rx="6" ry="13" transform="rotate(-270 33 112)"/>
+    <ellipse cx="35.1" cy="131.1" rx="6" ry="13" transform="rotate(-282 35.1 131.1)"/>
+    <ellipse cx="40.9" cy="149.5" rx="6" ry="13" transform="rotate(-294 40.9 149.5)"/>
+    <ellipse cx="50.6" cy="166.1" rx="6" ry="13" transform="rotate(-306 50.6 166.1)"/>
+    <ellipse cx="63.4" cy="180.4" rx="6" ry="13" transform="rotate(-318 63.4 180.4)"/>
+    <ellipse cx="79" cy="191.7" rx="6" ry="13" transform="rotate(-330 79 191.7)"/>
+  </g>
+
+  <!-- cincin emas -->
+  <circle cx="125" cy="112" r="66" fill="url(#gold)"/>
+  <circle cx="125" cy="112" r="66" fill="none" stroke="#8A560B" stroke-width="1"/>
+  <circle cx="125" cy="112" r="50" fill="#B01B2E"/>
+  <circle cx="125" cy="112" r="50" fill="none" stroke="#8A560B" stroke-width="0.9"/>
+
+  <!-- pemisah kata -->
+  <circle cx="59" cy="112" r="2.6" fill="#2B1B06"/>
+  <circle cx="191" cy="112" r="2.6" fill="#2B1B06"/>
+
+  <!-- teks melingkar -->
+  <text font-family="Georgia, 'Times New Roman', serif" font-size="13.5" font-weight="bold" letter-spacing="0.6" fill="#241606">
+    <textPath href="#ringTextTop" xlink:href="#ringTextTop" startOffset="50%" text-anchor="middle">SAMPOERNA KAYOE</textPath>
+  </text>
+  <text font-family="Georgia, 'Times New Roman', serif" font-size="12" font-weight="bold" letter-spacing="0.6" fill="#241606">
+    <textPath href="#ringTextBottom" xlink:href="#ringTextBottom" startOffset="50%" text-anchor="middle">1978</textPath>
+  </text>
+
+  <!-- simbol bunga (3 kelopak) -->
+  <g stroke="#8A560B" stroke-width="1.5" stroke-linejoin="round">
+    <!-- kelopak kiri -->
+    <path d="M 125,158 C 100,143 89,111 103,89 C 112,78 124,85 125,97 C 126,119 124,140 125,158 Z" fill="url(#gold)"/>
+    <!-- kelopak kanan -->
+    <path d="M 125,158 C 150,143 161,111 147,89 C 138,78 126,85 125,97 C 124,119 126,140 125,158 Z" fill="url(#gold)"/>
+    <!-- kelopak tengah -->
+    <path d="M 125,160 C 114,130 114,98 125,73 C 136,98 136,130 125,160 Z" fill="url(#gold)"/>
+  </g>
+  <!-- garis detail merah pada kelopak tengah -->
+  <path d="M 125,143 C 122,126 122,108 125,94" fill="none" stroke="#B01B2E" stroke-width="1.6" stroke-linecap="round"/>
+</svg>

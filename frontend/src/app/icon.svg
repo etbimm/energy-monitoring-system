@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>Java Wood Pellet</title>
+  <defs>
+    <linearGradient id="g" x1="0.15" y1="0" x2="0.45" y2="1">
+      <stop offset="0" stop-color="#F9E39A"/>
+      <stop offset="0.4" stop-color="#E5AE38"/>
+      <stop offset="1" stop-color="#A8660F"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" fill="#A8162A"/>
+  <circle cx="32" cy="30" r="24" fill="url(#g)"/>
+  <circle cx="32" cy="30" r="18" fill="#B01B2E"/>
+  <g fill="url(#g)" stroke="#8A560B" stroke-width="1.2" stroke-linejoin="round">
+    <path d="M 32,43 C 24,39 21,31 25,25 C 27,22 32,24 32,27 C 32,33 32,38 32,43 Z"/>
+    <path d="M 32,43 C 40,39 43,31 39,25 C 37,22 32,24 32,27 C 32,33 32,38 32,43 Z"/>
+    <path d="M 32,44 C 29,36 29,26 32,20 C 35,26 35,36 32,44 Z"/>
+  </g>
+</svg>
