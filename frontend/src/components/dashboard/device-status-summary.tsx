@@ -70,7 +70,7 @@ export function DeviceStatusSummary() {
             <p className="text-xs font-medium uppercase tracking-wider text-stone-500">
               Perlu perhatian ({attention.length})
             </p>
-            <ul className="mt-2 space-y-2">
+            <ul className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-1">
               {attention.map((d) => (
                 <li
                   key={d.id}

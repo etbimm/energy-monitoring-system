@@ -53,11 +53,11 @@ export function DeviceTable({ devices }: { devices: Device[] }) {
 /** Versi card untuk layar HP, menggantikan tabel yang melebar */
 export function DeviceCards({ devices }: { devices: Device[] }) {
   return (
-    <ul className="space-y-3 sm:hidden">
+    <ul className="grid grid-cols-2 gap-3 sm:hidden">
       {devices.map((d) => (
         <li
           key={d.id}
-          className="rounded-lg border border-stone-200 bg-stone-50 p-3"
+          className="min-w-0 rounded-lg border border-stone-200 bg-stone-50 p-3"
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">

@@ -26,7 +26,7 @@ export function KpiCard({
     : "border-stone-200 bg-white text-stone-900";
 
   return (
-    <Card className={cn("p-5", toneClass)}>
+    <Card className={cn("min-w-0 p-3 sm:p-5", toneClass)}>
       <div className="flex items-start justify-between">
         <div>
           <p
@@ -39,7 +39,7 @@ export function KpiCard({
           </p>
           <p
             className={cn(
-              "mt-2 text-2xl font-semibold tabular-nums",
+              "mt-2 text-xl font-semibold tabular-nums sm:text-2xl",
               dark ? "text-white" : "text-stone-900",
             )}
           >

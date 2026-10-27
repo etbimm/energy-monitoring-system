@@ -53,7 +53,7 @@ export default function HistoryPage() {
         </CardContent>
       </Card>
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-3">
         <SummaryCard label="Total Energy" value={formatNumber(totalEnergy)} unit="kWh" />
         <SummaryCard label="Rata-rata" value={formatNumber(avg)} unit="kW" />
         <SummaryCard label="Beban Puncak" value={formatNumber(peak)} unit="kW" />
@@ -74,7 +74,7 @@ export default function HistoryPage() {
         />
       </div>
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3">
         <SummaryCard label="Energy Aktif" value={formatNumber(totalEnergy)} unit="kWh" />
         <SummaryCard label="Energy Reaktif" value={formatNumber(totalReactive)} unit="kVARh" />
         <SummaryCard label="Energy Semu" value={formatNumber(totalApparent)} unit="kVAh" />
@@ -104,11 +104,11 @@ function SummaryCard({
   unit: string;
 }) {
   return (
-    <Card className="bg-brand-800 border-brand-800 p-5 text-white">
+    <Card className="min-w-0 border-brand-800 bg-brand-800 p-3 text-white sm:p-5">
       <p className="text-xs font-medium uppercase tracking-wider text-brand-200">
         {label}
       </p>
-      <p className="mt-2 text-2xl font-semibold tabular-nums">
+      <p className="mt-2 text-xl font-semibold tabular-nums sm:text-2xl">
         {value}
         {unit ? <span className="ml-1 text-sm font-normal text-brand-200">{unit}</span> : null}
       </p>

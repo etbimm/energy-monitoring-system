@@ -20,9 +20,9 @@ export default function AlarmsPage() {
     <>
       <PageHeader title="Alarms" description="Riwayat dan status alarm sistem" />
 
-      <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-1">
         {ALARMS.map((alarm) => (
-          <Card key={alarm.id} className={`border p-4 ${severityStyles[alarm.severity]}`}>
+          <Card key={alarm.id} className={`min-w-0 border p-3 sm:p-4 ${severityStyles[alarm.severity]}`}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-medium">{alarm.message}</p>

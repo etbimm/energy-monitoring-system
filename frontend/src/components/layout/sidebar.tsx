@@ -29,7 +29,7 @@ export function Sidebar() {
     <aside className="hidden w-60 shrink-0 flex-col border-r border-stone-200 bg-white md:sticky md:top-0 md:flex md:h-screen">
       <div className="flex items-center gap-2.5 px-5 py-5">
         <img
-          src="/logo-sampoerna-kayoe.svg"
+          src="/Logo%20SAMKO.jpeg"
           alt="Logo Java Wood Pellet"
           width={40}
           height={40}

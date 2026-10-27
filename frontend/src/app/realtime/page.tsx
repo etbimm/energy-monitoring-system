@@ -23,7 +23,7 @@ export default function RealtimePage() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <SummaryTile
           label="Total Daya"
           value={formatNumber(totals.totalPower)}
@@ -204,8 +204,8 @@ function SummaryTile({
     <Card
       className={
         dark
-          ? "border-brand-900 bg-brand-900 p-5 text-white"
-          : "border-stone-200 bg-white p-5 text-stone-900"
+          ? "min-w-0 border-brand-900 bg-brand-900 p-3 text-white sm:p-5"
+          : "min-w-0 border-stone-200 bg-white p-3 text-stone-900 sm:p-5"
       }
     >
       <div className="flex items-start justify-between">
@@ -219,7 +219,7 @@ function SummaryTile({
           >
             {label}
           </p>
-          <p className="mt-2 text-2xl font-semibold tabular-nums">
+          <p className="mt-2 text-xl font-semibold tabular-nums sm:text-2xl">
             {value}
             {unit ? (
               <span

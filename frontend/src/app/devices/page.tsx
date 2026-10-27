@@ -1,7 +1,6 @@
 import { PageHeader } from "@/components/layout/page-header";
-import { DeviceTable, DeviceCards } from "@/components/dashboard/device-table";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { DEVICES, TOTAL_METERS } from "@/lib/mock-data";
+import { DeviceLocations } from "@/components/dashboard/device-locations";
+import { getPanels, TOTAL_METERS } from "@/lib/mock-data";
 
 export default function DevicesPage() {
   return (
@@ -16,16 +15,7 @@ export default function DevicesPage() {
         }
       />
 
-      <Card>
-        <CardHeader
-          title="Semua Device"
-          subtitle={`${DEVICES.length} device terdaftar`}
-        />
-        <CardContent>
-          <DeviceCards devices={DEVICES} />
-          <DeviceTable devices={DEVICES} />
-        </CardContent>
-      </Card>
+      <DeviceLocations panels={getPanels()} />
     </>
   );
 }

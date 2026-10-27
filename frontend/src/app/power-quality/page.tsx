@@ -1,7 +1,8 @@
 import { Activity, CircleAlert, TriangleAlert, Waves } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
+import { PhaseDeviceDetails } from "@/components/dashboard/phase-device-details";
+import { ThdDeviceDetails } from "@/components/dashboard/thd-device-details";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { StatusBadge } from "@/components/ui/status-badge";
 import {
   DEVICES,
   getDevicesWithTHD,
@@ -52,7 +53,7 @@ export default function PowerQualityPage() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
         <SummaryTile
           label="Meter Termonitor"
           value={String(withTHD.length)}
@@ -106,7 +107,7 @@ export default function PowerQualityPage() {
           subtitle="Nilai THD arus tertinggi pada tiap panel"
         />
         <CardContent>
-          <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-1 sm:gap-4">
             {panels.map((p) => {
               const meters = p.devices.filter((d) => d.thdCurrent !== null);
               if (meters.length === 0) return null;
@@ -117,8 +118,8 @@ export default function PowerQualityPage() {
               const sev = thdSeverity(maxTHD);
 
               return (
-                <div key={p.location}>
-                  <div className="flex items-baseline justify-between gap-3">
+                <div key={p.location} className="rounded-lg border border-stone-200 p-3 sm:p-4">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
                     <p className="text-sm font-medium text-stone-900">
                       {p.location}
                       <span className="ml-2 text-xs font-normal text-stone-500">
@@ -179,7 +180,7 @@ export default function PowerQualityPage() {
               .
             </p>
           ) : (
-            <ul className="space-y-2">
+            <ul className="grid grid-cols-2 gap-2 sm:grid-cols-1">
               {live
                 .filter((d) => frequencySeverity(d.frequency) !== "ok")
                 .map((d) => (
@@ -210,101 +211,15 @@ export default function PowerQualityPage() {
         </CardContent>
       </Card>
 
-      <Card className="mt-4">
-        <CardHeader
-          title="Detail THD per Power Meter"
-          subtitle="Hanya meter yang mendukung pengukuran harmonik"
-        />
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-stone-200 text-xs uppercase tracking-wider text-stone-500">
-                  <th className="py-2 pr-4 font-medium">Device</th>
-                  <th className="py-2 pr-4 font-medium">Model</th>
-                  <th className="py-2 pr-4 font-medium">Status</th>
-                  <th className="py-2 pr-4 text-right font-medium">THD-I</th>
-                  <th className="py-2 pr-4 text-right font-medium">THD-U</th>
-                  <th className="py-2 pr-4 text-right font-medium">Hz</th>
-                  <th className="py-2 pr-4 text-right font-medium">Unbal V</th>
-                  <th className="py-2 pr-4 text-right font-medium">Unbal I</th>
-                  <th className="py-2 text-right font-medium">Orde</th>
-                </tr>
-              </thead>
-              <tbody>
-                {withTHD.map((d) => {
-                  const sev = thdSeverity(d.thdCurrent);
-                  return (
-                    <tr
-                      key={d.id}
-                      className="border-b border-stone-100 transition-colors hover:bg-brand-50/60"
-                    >
-                      <td className="whitespace-nowrap py-3 pr-4">
-                        <p className="font-medium text-stone-900">{d.name}</p>
-                        <p className="text-xs whitespace-nowrap text-stone-500">
-                          {d.id} - {d.location}
-                        </p>
-                      </td>
-                      <td className="py-3 pr-4 text-xs text-stone-600">
-                        {d.brand}
-                      </td>
-                      <td className="py-3 pr-4">
-                        <StatusBadge status={d.status} />
-                      </td>
-                      <td className="py-3 pr-4 text-right tabular-nums">
-                        <ThdBadge value={d.thdCurrent} severity={sev} />
-                      </td>
-                      <td className="py-3 pr-4 text-right tabular-nums text-stone-700">
-                        {d.thdVoltage !== null
-                          ? `${formatNumber(d.thdVoltage)}%`
-                          : "-"}
-                      </td>
-                      <td className="py-3 pr-4 text-right tabular-nums">
-                        <span
-                          className={
-                            frequencySeverity(d.frequency) === "ok"
-                              ? "text-stone-700"
-                              : "font-semibold text-brand-700"
-                          }
-                        >
-                          {formatNumber(d.frequency, 2)}
-                        </span>
-                      </td>
-                      <td className="py-3 pr-4 text-right tabular-nums text-stone-600">
-                        {d.unbalanceVoltage !== null
-                          ? `${formatNumber(d.unbalanceVoltage)}%`
-                          : "-"}
-                      </td>
-                      <td className="py-3 pr-4 text-right tabular-nums text-stone-600">
-                        {d.unbalanceCurrent !== null
-                          ? `${formatNumber(d.unbalanceCurrent)}%`
-                          : "-"}
-                      </td>
-                      <td className="py-3 text-right tabular-nums text-xs text-stone-500">
-                        s/d {d.capabilities.maxHarmonicOrder}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+      <ThdDeviceDetails
+        devices={withTHD}
+        locations={panels.map((panel) => panel.location)}
+      />
 
-      <Card className="mt-4">
-        <CardHeader
-          title="Detail Per Fasa"
-          subtitle="Nilai L1/L2/L3 untuk power meter yang mengukur per fasa"
-        />
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
-            {DEVICES.filter((d) => d.status !== "offline").map((d) => (
-              <PhaseCard key={d.id} device={d} />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <PhaseDeviceDetails
+        devices={DEVICES.filter((device) => device.status !== "offline")}
+        locations={panels.map((panel) => panel.location)}
+      />
 
       <Card className="mt-4">
         <CardHeader
@@ -312,7 +227,7 @@ export default function PowerQualityPage() {
           subtitle="Model yang tidak mendukung harmonik, atau opsi /H belum terpasang"
         />
         <CardContent>
-          <ul className="space-y-2">
+          <ul className="grid grid-cols-2 gap-2 sm:grid-cols-1">
             {withoutTHD.map((d) => (
               <li
                 key={d.id}
@@ -340,88 +255,6 @@ export default function PowerQualityPage() {
   );
 }
 
-function ThdBadge({
-  value,
-  severity,
-}: {
-  value: number | null;
-  severity: "ok" | "warning" | "critical" | "unsupported";
-}) {
-  if (value === null) {
-    return <span className="text-xs text-stone-400">-</span>;
-  }
-  const className =
-    severity === "critical"
-      ? "font-semibold text-brand-700"
-      : severity === "warning"
-        ? "font-semibold text-amber-600"
-        : "text-stone-700";
-  return <span className={className}>{formatNumber(value)}%</span>;
-}
-
-function PhaseCard({ device: d }: { device: Device }) {
-  return (
-    <div className="rounded-lg border border-stone-200 p-4">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-stone-900">{d.name}</p>
-          <p className="truncate text-xs text-stone-500">
-            {d.brand} - {d.location}
-          </p>
-        </div>
-        <StatusBadge status={d.status} />
-      </div>
-
-      <div className="mt-3 overflow-x-auto">
-        <table className="w-full text-left text-xs">
-          <thead>
-            <tr className="text-stone-500">
-              <th className="py-1 pr-3 font-medium">Fasa</th>
-              <th className="py-1 pr-3 text-right font-medium">V</th>
-              <th className="py-1 pr-3 text-right font-medium">A</th>
-              <th className="py-1 pr-3 text-right font-medium">kW</th>
-              <th className="py-1 pr-3 text-right font-medium">kVA</th>
-              <th className="py-1 pr-3 text-right font-medium">kVAR</th>
-              <th className="py-1 text-right font-medium">THD-I</th>
-            </tr>
-          </thead>
-          <tbody>
-            {d.phases.map((p) => (
-              <tr key={p.phase} className="border-t border-stone-100">
-                <td className="py-1.5 pr-3 font-medium text-stone-700">
-                  {p.phase}
-                </td>
-                <td className="py-1.5 pr-3 text-right tabular-nums text-stone-700">
-                  {p.voltage !== null ? formatNumber(p.voltage, 0) : "-"}
-                </td>
-                <td className="py-1.5 pr-3 text-right tabular-nums text-stone-700">
-                  {p.current !== null ? formatNumber(p.current) : "-"}
-                </td>
-                <td className="py-1.5 pr-3 text-right tabular-nums text-stone-900">
-                  {p.power !== null ? formatNumber(p.power) : "-"}
-                </td>
-                <td className="py-1.5 pr-3 text-right tabular-nums text-stone-600">
-                  {p.apparentPower !== null ? formatNumber(p.apparentPower) : "-"}
-                </td>
-                <td className="py-1.5 pr-3 text-right tabular-nums text-stone-600">
-                  {p.reactivePower !== null
-                    ? formatNumber(p.reactivePower)
-                    : "-"}
-                </td>
-                <td className="py-1.5 text-right tabular-nums text-stone-600">
-                  {p.thdCurrent !== null
-                    ? `${formatNumber(p.thdCurrent)}%`
-                    : "-"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 function SummaryTile({
   label,
   value,
@@ -440,8 +273,8 @@ function SummaryTile({
     <Card
       className={
         dark
-          ? "border-brand-900 bg-brand-900 p-5 text-white"
-          : "border-stone-200 bg-white p-5 text-stone-900"
+          ? "min-w-0 border-brand-900 bg-brand-900 p-3 text-white sm:p-5"
+          : "min-w-0 border-stone-200 bg-white p-3 text-stone-900 sm:p-5"
       }
     >
       <div className="flex items-start justify-between">
@@ -455,7 +288,7 @@ function SummaryTile({
           >
             {label}
           </p>
-          <p className="mt-2 text-2xl font-semibold tabular-nums">
+          <p className="mt-2 text-xl font-semibold tabular-nums sm:text-2xl">
             {value}
             {unit ? (
               <span
