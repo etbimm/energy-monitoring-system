@@ -33,7 +33,7 @@ Server (Linux / Docker)
 Frontend Dashboard (Next.js) : fetch REST + listen WebSocket
 ```
 
-Node-RED **tidak dipakai**. Akuisisi dan decode register ada di proses Python
+Akuisisi dan decode register dilakukan oleh proses Python
 `backend/app/acquisition`.
 
 ## Kenapa tetap ada MQTT?
@@ -109,9 +109,11 @@ Sumber kebenaran profil register: `backend/app/acquisition/profiles.py`
 | LOVATO DMG510 | int32 / uint16 | 100 / 10 / 1000 | FC03 |
 | CEWE Elite440 | float32 | 1 | FC03 |
 | ACREL AMC96 | uint16 | 10 / 100 | FC03 |
-| WEIDMULLER EM220 | uint32 / uint16 | 1000 / 100 | FC03 |
+| WEIDMULLER EM220 | uint32 / uint16 / float32 THD-I | 1000 / 100 / 1 | FC04 |
 
-Word order default: little-endian (low word dulu). PF dan kVAh native tidak dipoll.
+Word order default: little-endian (low word dulu); EM220 THD-I memakai float32
+ABCD big-endian pada register `0x00F0`, `0x00F2`, dan `0x00F4`. PF dan kVAh
+native tidak dipoll.
 
 ## Konsep Penting
 

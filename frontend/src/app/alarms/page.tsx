@@ -4,8 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { DataState } from "@/components/ui/data-state";
+import { DemoDataNotice } from "@/components/ui/demo-data-notice";
 import { acknowledgeAlarm, getAlarms } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
+import { ALARMS } from "@/lib/mock-data";
 import type { Alarm } from "@/lib/types";
 
 const severityStyles = {
@@ -20,17 +22,37 @@ const severityLabel = {
   info: "Info",
 };
 
+function getDemoAlarms(current: Alarm[]) {
+  return ALARMS.map((alarm) => ({
+    ...alarm,
+    acknowledged:
+      current.find((item) => item.id === alarm.id)?.acknowledged ??
+      alarm.acknowledged,
+  }));
+}
+
 export default function AlarmsPage() {
-  const [alarms, setAlarms] = useState<Alarm[]>([]);
+  const [alarms, setAlarms] = useState<Alarm[]>(ALARMS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [isDemo, setIsDemo] = useState(true);
 
   const refresh = useCallback(async () => {
     try {
-      setAlarms(await getAlarms());
-      setError(null);
+      const currentAlarms = await getAlarms();
+      if (currentAlarms.length === 0) {
+        setAlarms((current) => getDemoAlarms(current));
+        setIsDemo(true);
+        setError("Backend belum memiliki alarm. Menampilkan contoh alarm simulasi.");
+      } else {
+        setAlarms(currentAlarms);
+        setIsDemo(false);
+        setError(null);
+      }
     } catch (cause) {
+      setAlarms((current) => getDemoAlarms(current));
+      setIsDemo(true);
       setError(cause instanceof Error ? cause.message : "Gagal memuat alarm.");
     } finally {
       setLoading(false);
@@ -44,6 +66,15 @@ export default function AlarmsPage() {
   }, [refresh]);
 
   async function acknowledge(id: string) {
+    if (isDemo) {
+      setAlarms((current) =>
+        current.map((alarm) =>
+          alarm.id === id ? { ...alarm, acknowledged: true } : alarm,
+        ),
+      );
+      return;
+    }
+
     setPendingId(id);
     try {
       const updated = await acknowledgeAlarm(id);
@@ -61,6 +92,7 @@ export default function AlarmsPage() {
   return (
     <>
       <PageHeader title="Alarms" description="Riwayat dan status alarm sistem" />
+      {isDemo ? <DemoDataNotice message="menampilkan contoh alarm simulasi. Status acknowledge hanya tersimpan di tampilan demo." /> : null}
       <DataState loading={loading} error={error} />
 
       {alarms.length === 0 && !loading && !error ? (

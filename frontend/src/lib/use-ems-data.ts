@@ -2,13 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getDevices, getRealtimeUrl, getSummary, type Summary } from "@/lib/api";
+import { DEVICES, getTotals } from "@/lib/mock-data";
 import type { Device } from "@/lib/types";
 
 export function useEMSData() {
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [summary, setSummary] = useState<Summary | null>(null);
+  const [devices, setDevices] = useState<Device[]>(DEVICES);
+  const [summary, setSummary] = useState<Summary>(getTotals());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isDemo, setIsDemo] = useState(true);
   const [realtime, setRealtime] = useState(false);
   const lastRealtimeRefresh = useRef(0);
 
@@ -18,10 +20,25 @@ export function useEMSData() {
         getDevices(),
         getSummary(),
       ]);
+      if (
+        nextDevices.length === 0 ||
+        nextSummary.total === 0 ||
+        nextDevices.every((device) => !device.lastSeen)
+      ) {
+        setDevices(DEVICES);
+        setSummary(getTotals());
+        setIsDemo(true);
+        setError("Backend belum memiliki data meter. Menampilkan data simulasi.");
+        return;
+      }
       setDevices(nextDevices);
       setSummary(nextSummary);
+      setIsDemo(false);
       setError(null);
     } catch (cause) {
+      setDevices(DEVICES);
+      setSummary(getTotals());
+      setIsDemo(true);
       setError(cause instanceof Error ? cause.message : "Gagal memuat data EMS.");
     } finally {
       setLoading(false);
@@ -67,5 +84,5 @@ export function useEMSData() {
     };
   }, [refresh]);
 
-  return { devices, summary, loading, error, realtime, refresh };
+  return { devices, summary, loading, error, isDemo, realtime, refresh };
 }

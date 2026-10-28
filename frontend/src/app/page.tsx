@@ -9,8 +9,10 @@ import { LoadDistributionChart } from "@/components/dashboard/load-distribution-
 import { DeviceStatusSummary } from "@/components/dashboard/device-status-summary";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DataState } from "@/components/ui/data-state";
+import { DemoDataNotice } from "@/components/ui/demo-data-notice";
 import { getReadings } from "@/lib/api";
 import { getLoadByPanel } from "@/lib/device-data";
+import { generateProfileForRange } from "@/lib/mock-data";
 import { useEMSData } from "@/lib/use-ems-data";
 import type { TimeSeriesPoint } from "@/lib/types";
 import { formatNumber } from "@/lib/format";
@@ -20,10 +22,19 @@ const OVERVIEW_SERIES = [
   { key: "energy" as const, label: "Energy", unit: "kWh", color: "#0a0a0a", variant: "line" as const, dashed: true },
 ];
 
+function todayString() {
+  const date = new Date();
+  const offset = date.getTimezoneOffset();
+  return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 10);
+}
+
 export default function OverviewPage() {
-  const { devices, summary, loading, error } = useEMSData();
-  const [profile, setProfile] = useState<TimeSeriesPoint[]>([]);
+  const { devices, summary, loading, error, isDemo } = useEMSData();
+  const [profile, setProfile] = useState<TimeSeriesPoint[]>(() =>
+    generateProfileForRange(todayString(), todayString()),
+  );
   const [readingsError, setReadingsError] = useState<string | null>(null);
+  const [profileIsDemo, setProfileIsDemo] = useState(true);
 
   useEffect(() => {
     const start = new Date();
@@ -38,12 +49,21 @@ export default function OverviewPage() {
       })
         .then((points) => {
           if (active) {
-            setProfile(points);
-            setReadingsError(null);
+            if (points.length === 0) {
+              setProfile(generateProfileForRange(todayString(), todayString()));
+              setProfileIsDemo(true);
+              setReadingsError("Belum ada histori di backend.");
+            } else {
+              setProfile(points);
+              setProfileIsDemo(false);
+              setReadingsError(null);
+            }
           }
         })
         .catch((cause: unknown) => {
           if (active) {
+            setProfile(generateProfileForRange(todayString(), todayString()));
+            setProfileIsDemo(true);
             setReadingsError(
               cause instanceof Error ? cause.message : "Gagal memuat grafik.",
             );
@@ -69,6 +89,7 @@ export default function OverviewPage() {
     total: 0,
   };
   const loadByDevice = getLoadByPanel(devices);
+  const pageError = [...new Set([error, readingsError].filter(Boolean))].join(" ");
 
   return (
     <>
@@ -81,8 +102,8 @@ export default function OverviewPage() {
           </span>
         }
       />
-      <DataState loading={loading} error={error} />
-      {readingsError ? <DataState loading={false} error={readingsError} /> : null}
+      {isDemo || profileIsDemo ? <DemoDataNotice /> : null}
+      <DataState loading={loading} error={pageError || null} />
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <KpiCard
@@ -116,7 +137,7 @@ export default function OverviewPage() {
         <Card className="xl:col-span-2">
           <CardHeader
             title="Profil Konsumsi 24 Jam"
-            subtitle="Daya (kW) dan energy kumulatif (kWh) - meter incoming"
+            subtitle={`Daya (kW) dan energy kumulatif (kWh) - ${profileIsDemo ? "profil simulasi" : "meter incoming"}`}
           />
           <CardContent>
             <PowerChart data={profile} series={OVERVIEW_SERIES} />

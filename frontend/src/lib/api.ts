@@ -63,6 +63,8 @@ type ReadingResponse = Omit<
   | "voltage"
   | "current"
   | "frequency"
+  | "powerFactor"
+  | "thdCurrent"
 > & {
   [key in
     | "power"
@@ -73,7 +75,9 @@ type ReadingResponse = Omit<
     | "energyApparent"
     | "voltage"
     | "current"
-    | "frequency"]: number | null;
+    | "frequency"
+    | "powerFactor"
+    | "thdCurrent"]: number | null;
 };
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(
@@ -175,6 +179,8 @@ export async function getReadings({
     voltage: row.voltage ?? 0,
     current: row.current ?? 0,
     frequency: row.frequency ?? 0,
+    powerFactor: row.powerFactor ?? 0,
+    thdCurrent: row.thdCurrent,
     label: row.label || new Date(row.timestamp).toLocaleTimeString("id-ID", {
       hour: "2-digit",
       minute: "2-digit",

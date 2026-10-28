@@ -1,11 +1,12 @@
 "use client";
 
-import { Activity, CircleAlert, TriangleAlert, Waves } from "lucide-react";
+import { Activity, TriangleAlert, Waves } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { PhaseDeviceDetails } from "@/components/dashboard/phase-device-details";
 import { ThdDeviceDetails } from "@/components/dashboard/thd-device-details";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DataState } from "@/components/ui/data-state";
+import { DemoDataNotice } from "@/components/ui/demo-data-notice";
 import { getPanelsForDevices } from "@/lib/device-data";
 import { useEMSData } from "@/lib/use-ems-data";
 import {
@@ -18,12 +19,9 @@ import { formatNumber } from "@/lib/format";
 import type { Device } from "@/lib/types";
 
 export default function PowerQualityPage() {
-  const { devices, loading, error } = useEMSData();
+  const { devices, loading, error, isDemo } = useEMSData();
   const withTHD = devices.filter(
-    (device) => device.status !== "offline" && device.thdCurrent !== null,
-  );
-  const withoutTHD = devices.filter(
-    (device) => !device.capabilities.thdCurrent || device.thdCurrent === null,
+    (device) => device.status !== "offline" && device.capabilities.thdCurrent,
   );
   const panels = getPanelsForDevices(devices);
 
@@ -52,17 +50,18 @@ export default function PowerQualityPage() {
         description="Kualitas daya: THD, unbalance, dan detail per fasa"
         action={
           <span className="text-xs text-stone-500">
-            THD tersedia pada {withTHD.length} dari {devices.length} power meter
+            THD termonitor pada {withTHD.length} dari {devices.length} power meter online
           </span>
         }
       />
+      {isDemo ? <DemoDataNotice /> : null}
       <DataState loading={loading} error={error} />
 
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <SummaryTile
           label="Meter Termonitor"
           value={String(withTHD.length)}
-          unit={`dari ${devices.length}`}
+          unit="meter online"
           icon={Waves}
         />
         <SummaryTile
@@ -88,12 +87,6 @@ export default function PowerQualityPage() {
           tone={exceed.length > 0 ? "danger" : "default"}
         />
         <SummaryTile
-          label="Tanpa Dukungan THD"
-          value={String(withoutTHD.length)}
-          unit="meter"
-          icon={CircleAlert}
-        />
-        <SummaryTile
           label="Rentang Frekuensi"
           value={
             freqMin !== null && freqMax !== null
@@ -117,9 +110,12 @@ export default function PowerQualityPage() {
               const meters = p.devices.filter((d) => d.thdCurrent !== null);
               if (meters.length === 0) return null;
               const maxTHD = Math.max(...meters.map((d) => d.thdCurrent ?? 0));
-              const maxTHDu = Math.max(
-                ...meters.map((d) => d.thdVoltage ?? 0),
-              );
+              const voltageReadings = meters
+                .map((device) => device.thdVoltage)
+                .filter((value): value is number => value !== null);
+              const maxTHDu = voltageReadings.length
+                ? Math.max(...voltageReadings)
+                : null;
               const sev = thdSeverity(maxTHD);
 
               return (
@@ -144,7 +140,7 @@ export default function PowerQualityPage() {
                         {formatNumber(maxTHD)}% THD-I
                       </span>
                       <span className="ml-3 text-xs text-stone-500">
-                        {formatNumber(maxTHDu)}% THD-U
+                        {maxTHDu !== null ? `${formatNumber(maxTHDu)}% THD-U` : "- THD-U"}
                       </span>
                     </p>
                   </div>
@@ -226,36 +222,6 @@ export default function PowerQualityPage() {
         locations={panels.map((panel) => panel.location)}
       />
 
-      <Card className="mt-4">
-        <CardHeader
-          title="Meter Tanpa Data THD"
-          subtitle="Model yang tidak mendukung harmonik, atau opsi /H belum terpasang"
-        />
-        <CardContent>
-          <ul className="grid grid-cols-2 gap-2 sm:grid-cols-1">
-            {withoutTHD.map((d) => (
-              <li
-                key={d.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-stone-50 px-3 py-2 text-sm ring-1 ring-stone-200"
-              >
-                <span>
-                  <span className="font-medium text-stone-900">{d.name}</span>
-                  <span className="ml-2 text-xs text-stone-500">
-                    {d.id} - {d.brand}
-                  </span>
-                </span>
-                <span className="text-xs text-stone-500">
-                  {d.status === "offline"
-                    ? "Device offline - tidak ada data"
-                    : d.capabilities.thdCurrent
-                      ? "Opsi /H belum terpasang"
-                      : "Model tanpa dukungan harmonik"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
     </>
   );
 }

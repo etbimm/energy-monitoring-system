@@ -152,7 +152,9 @@ export function ThdDeviceDetails({
                           : "-"}
                       </td>
                       <td className="py-3 text-right tabular-nums text-xs text-stone-500">
-                        s/d {device.capabilities.maxHarmonicOrder}
+                        {device.capabilities.maxHarmonicOrder > 0
+                          ? `s/d ${device.capabilities.maxHarmonicOrder}`
+                          : "-"}
                       </td>
                     </tr>
                   ))}

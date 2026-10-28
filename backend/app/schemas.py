@@ -75,6 +75,8 @@ class TimeSeriesPoint(CamelModel):
     voltage: float | None = None
     current: float | None = None
     frequency: float | None = None
+    power_factor: float | None = None
+    thd_current: float | None = None
 
 
 class SummaryOut(CamelModel):

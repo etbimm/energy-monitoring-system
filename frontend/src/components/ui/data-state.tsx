@@ -9,15 +9,16 @@ export function DataState({
     return (
       <div
         role="alert"
-        className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+        className="mb-4 rounded-lg border border-red-300 bg-red-100 px-4 py-3 text-sm font-medium text-red-900"
       >
-        {error} Pastikan backend berjalan dan NEXT_PUBLIC_API_URL sudah benar.
+        {error} Data simulasi digunakan sebagai pengganti. Pastikan backend berjalan
+        dan NEXT_PUBLIC_API_URL sudah benar untuk melihat data aktual.
       </div>
     );
   }
   if (loading) {
     return (
-      <p className="mb-4 rounded-lg border border-stone-200 bg-white px-4 py-3 text-sm text-stone-600">
+      <p className="mb-4 rounded-lg border border-yellow-300 bg-yellow-100 px-4 py-3 text-sm font-medium text-yellow-900">
         Memuat data dari EMS...
       </p>
     );

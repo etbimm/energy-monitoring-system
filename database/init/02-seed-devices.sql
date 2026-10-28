@@ -96,3 +96,18 @@ INSERT INTO devices (
     '{"perPhase":true,"apparentEnergyRegister":false,"thdCurrent":false,"thdVoltage":false,"maxHarmonicOrder":0,"unbalance":false,"reactiveEnergy":true,"demand":true}'::jsonb
   )
 ON CONFLICT (device_code) DO NOTHING;
+
+UPDATE devices
+SET capabilities = jsonb_set(
+  jsonb_set(capabilities, '{thdCurrent}', 'true'::jsonb, true),
+  '{thdVoltage}',
+  CASE WHEN model = 'WEIDMULLER EM220' THEN 'false'::jsonb ELSE 'true'::jsonb END,
+  true
+)
+WHERE model IN (
+  'SIEMENS PAC3220',
+  'LOVATO DMG510',
+  'CEWE Elite440',
+  'ACREL AMC96',
+  'WEIDMULLER EM220'
+);

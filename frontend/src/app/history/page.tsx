@@ -6,12 +6,14 @@ import { PageHeader } from "@/components/layout/page-header";
 import { PowerChart } from "@/components/dashboard/power-chart";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DataState } from "@/components/ui/data-state";
+import { DemoDataNotice } from "@/components/ui/demo-data-notice";
 import {
   DateRangePicker,
   type RangePreset,
 } from "@/components/ui/date-range-picker";
 import { getReadings } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
+import { generateProfileForRange } from "@/lib/mock-data";
 import { POWER_QUALITY_SERIES } from "@/components/dashboard/power-chart";
 import type { TimeSeriesPoint } from "@/lib/types";
 
@@ -31,7 +33,13 @@ export default function HistoryPage() {
     to: isoDate(now),
     preset: "24h" as RangePreset,
   });
-  const [data, setData] = useState<TimeSeriesPoint[]>([]);
+  const [data, setData] = useState<TimeSeriesPoint[]>(() =>
+    generateProfileForRange(
+      isoDate(new Date(now.getTime() - 86_400_000)),
+      isoDate(now),
+    ),
+  );
+  const [isDemo, setIsDemo] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +49,7 @@ export default function HistoryPage() {
       setError("Rentang tanggal tidak valid. Pilih tanggal mulai dan akhir yang benar.");
       setLoading(false);
       setData([]);
+      setIsDemo(false);
       return () => {
         active = false;
       };
@@ -58,13 +67,21 @@ export default function HistoryPage() {
     })
       .then((points) => {
         if (active) {
-          setData(points);
-          setError(null);
+          if (points.length === 0) {
+            setData(generateProfileForRange(range.from, range.to));
+            setIsDemo(true);
+            setError("Belum ada histori di backend.");
+          } else {
+            setData(points);
+            setIsDemo(false);
+            setError(null);
+          }
         }
       })
       .catch((cause: unknown) => {
         if (active) {
-          setData([]);
+          setData(generateProfileForRange(range.from, range.to));
+          setIsDemo(true);
           setError(cause instanceof Error ? cause.message : "Gagal memuat histori.");
         }
       })
@@ -100,18 +117,19 @@ export default function HistoryPage() {
     : 0;
   const csv = useMemo(
     () => [
-      ["Timestamp", "kW", "kVA", "kVAR", "kWh", "kVARh", "kVAh", "V", "A", "Hz"],
+      ["Timestamp", "V", "A", "kW", "kVAR", "kVA", "PF", "Hz", "kWh", "kVARh", "THD-i"],
       ...data.map((point) => [
         point.timestamp,
-        point.power,
-        point.apparentPower,
-        point.reactivePower,
-        point.energy,
-        point.energyReactive,
-        point.energyApparent,
         point.voltage,
         point.current,
+        point.power,
+        point.reactivePower,
+        point.apparentPower,
+        point.powerFactor,
         point.frequency,
+        point.energy,
+        point.energyReactive,
+        point.thdCurrent ?? "",
       ]),
     ],
     [data],
@@ -130,6 +148,7 @@ export default function HistoryPage() {
   return (
     <>
       <PageHeader title="History" description="Analitik konsumsi energi" />
+      {isDemo ? <DemoDataNotice /> : null}
       <DataState loading={loading} error={error} />
 
       <Card>
@@ -183,19 +202,20 @@ export default function HistoryPage() {
             <p className="text-sm text-stone-500">Tidak ada data pada rentang tanggal ini.</p>
           ) : (
             <div className="max-h-[480px] overflow-auto">
-              <table className="w-full min-w-[800px] text-left text-xs">
+              <table className="w-full min-w-[960px] text-left text-xs">
                 <thead className="sticky top-0 bg-stone-50 text-stone-500">
                   <tr>
                     <th className="px-2 py-2 font-medium">Waktu</th>
-                    <th className="px-2 py-2 text-right font-medium">kW</th>
-                    <th className="px-2 py-2 text-right font-medium">kVA</th>
-                    <th className="px-2 py-2 text-right font-medium">kVAR</th>
-                    <th className="px-2 py-2 text-right font-medium">kWh</th>
-                    <th className="px-2 py-2 text-right font-medium">kVARh</th>
-                    <th className="px-2 py-2 text-right font-medium">kVAh</th>
                     <th className="px-2 py-2 text-right font-medium">V</th>
                     <th className="px-2 py-2 text-right font-medium">A</th>
+                    <th className="px-2 py-2 text-right font-medium">kW</th>
+                    <th className="px-2 py-2 text-right font-medium">kVAR</th>
+                    <th className="px-2 py-2 text-right font-medium">kVA</th>
+                    <th className="px-2 py-2 text-right font-medium">PF</th>
                     <th className="px-2 py-2 text-right font-medium">Hz</th>
+                    <th className="px-2 py-2 text-right font-medium">kWh</th>
+                    <th className="px-2 py-2 text-right font-medium">kVARh</th>
+                    <th className="px-2 py-2 text-right font-medium">THD-i</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -204,13 +224,16 @@ export default function HistoryPage() {
                       <td className="whitespace-nowrap px-2 py-2">
                         {new Date(point.timestamp).toLocaleString("id-ID")}
                       </td>
-                      {[point.power, point.apparentPower, point.reactivePower,
-                        point.energy, point.energyReactive, point.energyApparent,
-                        point.voltage, point.current, point.frequency].map((value, index) => (
-                        <td key={index} className="px-2 py-2 text-right tabular-nums">
-                          {formatNumber(value, index >= 6 ? 2 : 1)}
-                        </td>
-                      ))}
+                      {[point.voltage, point.current, point.power, point.reactivePower,
+                        point.apparentPower, point.powerFactor, point.frequency,
+                        point.energy, point.energyReactive].map((value, index) => (
+                          <td key={index} className="px-2 py-2 text-right tabular-nums">
+                            {formatNumber(value, index === 5 ? 3 : index < 2 || index === 6 ? 2 : 1)}
+                          </td>
+                        ))}
+                      <td className="px-2 py-2 text-right tabular-nums">
+                        {point.thdCurrent === null ? "-" : `${formatNumber(point.thdCurrent)}%`}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

@@ -20,7 +20,6 @@ Dokumen ini adalah **sumber kebenaran tunggal** untuk:
 
 Dokumen terkait:
 - [`../backend/app/acquisition/profiles.py`](../backend/app/acquisition/profiles.py) — profil register runtime
-- [`../node-red/register-map.md`](../node-red/register-map.md) — tabel register ringkas (arsip)
 - [`data-model.md`](./data-model.md) — skema tabel
 - [`architecture.md`](./architecture.md) — alur data end-to-end
 
@@ -85,17 +84,15 @@ Parameter tidak dikumpulkan semua lewat Modbus. Ada tiga lapis dengan alasan ber
 
 | Parameter | Satuan | Tersedia di | Syarat |
 |---|---|---|---|
-| **THD-I** (THD arus) | % | PAC3220, DMG510, Elite440, AMC96\* | AMC96 hanya bila opsi `/H` terpasang |
-| **THD-U** (THD tegangan) | % | PAC3220, DMG510, Elite440, AMC96\* | idem |
+| **THD-I** (THD arus) | % | Semua model meter yang digunakan |
+| **THD-U** (THD tegangan) | % | PAC3220, DMG510, Elite440, AMC96 | Tidak tersedia di EM220 |
 | THD-P (THD daya) | % | Elite440 | rata-rata, s/d orde 31 |
 | Unbalance Voltage | % | PAC3220 | |
 | Unbalance Current | % | PAC3220 | |
 
-\* **6 unit AMC96 wajib dicek fisik saat commissioning** — port `/H` di belakang unit.
-
-Ketiga parameter ini **nullable** di seluruh stack. Meter yang tidak mendukungnya
-harus menampilkan "tidak tersedia", **bukan** angka 0 — 0 berarti "sehat",
-sedangkan "tidak tersedia" berarti "tidak bisa diukur".
+Nilai THD tetap **nullable** sebelum pembacaan pertama atau saat meter offline.
+Nilai kosong pada keadaan tersebut berarti data belum diterima, bukan berarti
+meter tidak memiliki kapabilitas THD.
 
 ### 3.4 Parameter yang TIDAK diambil
 
@@ -115,8 +112,8 @@ sedangkan "tidak tersedia" berarti "tidak bisa diukur".
 | V / I / kW / kVA / kVAR | ✅ | ✅ | ✅ | ✅ | ✅ |
 | kWh / kVARh | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **kVAh native** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **THD-I** | ✅ | ✅ | ✅ | ⚠️ `/H` | ❌ |
-| THD-U | ✅ | ✅ | ✅ | ⚠️ `/H` | ❌ |
+| **THD-I** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| THD-U | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Unbalance V / I | ✅ | ❌ | ❌ | ❌ | ❌ |
 | PF | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Hz | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -128,8 +125,9 @@ sedangkan "tidak tersedia" berarti "tidak bisa diukur".
 | Default bus | 19200,8N1 | 9600,8N1 | 9600,8N1 | 9600,8N1 | 9600,8N1 |
 | Update internal | — | — | — | — | 1 detik |
 
-**Ringkasan cakupan THD:** 5 (PAC3220) + 3 (DMG510) + 1 (Elite440) + 1 (AMC96 dgn `/H`)
-= **10 dari 18 meter**. 3 unit EM220 sama sekali tidak mendukungnya.
+**Cakupan THD-I:** tersedia pada seluruh **18 meter**. THD-U tersedia pada
+semua model selain EM220. Nilai histori atau realtime tetap kosong sampai
+telemetry aktual diterima.
 
 ---
 
@@ -157,7 +155,7 @@ Contoh: AMC96 register 6 (uint16) berisi 1186 → publish `power: 118.6` kW (ska
 | **Multiplier CT** | Meter menerima CT sekunder 1 A / 5 A. | Set rasio CT di alat. Verifikasi saat commissioning. |
 | **KVAh** | 17 dari 18 meter tidak punya register ini. | **Jangan poll.** Hitung di backend dari kWh & PF. |
 | **PF** | Definisi register berbeda antar model. | **Jangan poll.** Hitung di backend dari kW & kVA. |
-| **THD tanpa `/H`** | AMC96 tanpa opsi `/H`: register tidak ada / nilai 0. | Publish `null`, bukan 0. |
+| **THD** | Baca THD-I pada semua model dan THD-U pada model yang menyediakan register. EM220: THD-I fase A/B/C float32 ABCD di `0x00F0`, `0x00F2`, `0x00F4` (FC04). | Normalisasi ke persen; nilai yang belum dibaca tetap `null`. |
 | **DMG510 THD mati** | Perlu `P02.12 = THD+HAR`. | Set parameter saat commissioning, lalu verifikasi nilainya non-null. |
 
 ### 5.3 Kontrak payload MQTT
@@ -220,8 +218,8 @@ Kaidah:
 | capabilities | JSONB | kapabilitas efektif unit ini |
 | is_active | BOOLEAN | |
 
-> `capabilities` disimpan per **unit**, bukan per model, karena AMC96 ada yang
-> punya opsi `/H` dan ada yang tidak.
+> `capabilities` disimpan per **unit**. THD-I tersedia pada semua model;
+> THD-U tidak tersedia pada EM220.
 
 ### 6.2 Tabel `readings` (hypertable, TimescaleDB)
 
@@ -364,12 +362,9 @@ parameter per-detik selamanya, atau polling register energy tiap 1 detik.
 
 ### 9.1 Aturan tampilan parameter opsional
 
-- THD-I **tidak** ditampilkan sebagai kotak kosong pada meter yang tidak mendukungnya.
-  Di kartu real-time: tampilkan "-" dengan label "THD-I".
-- Di halaman **Power Quality**, meter tanpa THD dikumpulkan di daftar terpisah
-  ("Meter Tanpa Data THD") beserta alasannya:
-  - `Opsi /H belum terpasang` (AMC96)
-  - `Model tanpa dukungan harmonik` (EM220)
+- Semua meter memiliki kapabilitas THD-I; EM220 tidak menyediakan THD-U.
+- Nilai yang belum pernah diterima atau meter offline ditampilkan sebagai "-",
+  bukan dikelompokkan sebagai meter tanpa dukungan.
 - Ambang status THD (acuan IEC 61000-4-30):
 
 | THD-I | Status |
@@ -393,7 +388,8 @@ parameter per-detik selamanya, atau polling register energy tiap 1 detik.
 | Offline | heartbeat > 30 detik | > 3 menit | status |
 | Beban | > 80% kapasitas | > 95% kapasitas | inti |
 
-> Ambang THD/unbalance hanya berlaku pada meter yang mendukungnya.
+> Ambang THD berlaku pada semua meter; ambang unbalance hanya berlaku pada
+> meter yang mendukung pengukuran unbalance.
 > Ambang frekuensi mengacu IEC 61000-4-30 untuk grid 50 Hz.
 
 ### 10.1 Frekuensi sebagai parameter kualitas daya
@@ -426,11 +422,12 @@ konsumsi energi.
 
 **Khusus per model**
 
-- [ ] **AMC96** — cek fisik keberadaan opsi `/H` pada 6 unit (untuk THD)
+- [ ] **AMC96** — verifikasi pembacaan THD-I dan THD-U terhadap display meter
 - [ ] **DMG510** — set `P02.12 = THD+HAR` pada 3 unit (untuk THD)
 - [ ] **PAC3220** — pastikan jalur Ethernet, bukan lewat converter RS485
 - [ ] **Elite440** — konfirmasi pemetaan baris multi-line (L1/L2/L3)
-- [ ] **EM220** — pastikan mode 3P4W / rasio CT benar
+- [ ] **EM220** — verifikasi THD-I fase A/B/C dari register FC04
+  `0x00F0`/`0x00F2`/`0x00F4`, mode 3P4W, dan rasio CT
 
 **Jaringan**
 
@@ -448,8 +445,7 @@ konsumsi energi.
 2. **Meter LVMDP Incoming 5 unit** — apakah semuanya meter incoming utama,
    atau sebagian hanya monitoring sub-feeder? Jika sebagian hanya sub-feeder,
    aturan total sistem harus disesuaikan.
-3. **Opsi `/H` pada AMC96** — unit mana yang sudah terpasang?
-4. **Tarif & penalti PF** — hapus fitur estimasi biaya dari UI, tetapi apakah
+3. **Tarif & penalti PF** — hapus fitur estimasi biaya dari UI, tetapi apakah
    data PF & kVARh tetap dibutuhkan untuk pengajuan penalti ke PLN?
 5. **Meter 7SR51** — ada datasheet Siemens 7SR51 di folder yang tidak masuk
    rekap 18 meter. Apakah itu relay proteksi (bukan power meter)?

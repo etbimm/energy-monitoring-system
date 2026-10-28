@@ -11,8 +11,8 @@ import type {
 import { getCapabilities } from "./meter-models";
 
 /**
- * MOCK DATA — hanya untuk development frontend.
- * Nanti bagian ini diganti dengan fetch ke backend API.
+ * FIXTURE DATA — data pengembangan yang juga dipakai sebagai fallback demo
+ * saat backend belum tersedia atau belum memiliki telemetri.
  *
  * Rekap power meter (18 unit) sesuai data lapangan:
  *   LVMDP          - SIEMENS PAC3220 (Incoming)   5
@@ -65,7 +65,7 @@ interface MeterSpec {
   voltage: number; // V
   current: number; // A
   frequency: number; // Hz
-  /** THD arus (%) — null bila meter tidak mendukung / opsi belum terpasang */
+  /** THD arus (%) */
   thdCurrent?: number | null;
   /** THD tegangan (%) */
   thdVoltage?: number | null;
@@ -88,22 +88,22 @@ const METER_SPECS: MeterSpec[] = [
   { id: "PM-LVMDP-OUT-03", name: "LVMDP Outcoming 3", location: "LVMDP", model: "LOVATO DMG510", role: "outcoming", status: "online", power: 55.2, powerFactor: 0.92, energyActive: 662.4, voltage: 401.4, current: 84.1, frequency: 50.01, thdCurrent: 3.4, thdVoltage: 1.7 },
   // ---- MVMDP - CEWE Elite440 ----
   { id: "PM-MVMDP-01", name: "MVMDP", location: "MVMDP", model: "CEWE Elite440", role: "incoming", status: "online", power: 64.5, powerFactor: 0.95, energyActive: 774.0, voltage: 398.4, current: 98.3, frequency: 50.02, thdCurrent: 5.8, thdVoltage: 2.9 },
-  // ---- MCC 1 - ACREL AMC96 (tanpa opsi /H -> tidak ada THD) ----
-  { id: "PM-MCC1-01", name: "MCC 1 Meter 1", location: "MCC 1", model: "ACREL AMC96", role: "distribution", status: "online", power: 42.6, powerFactor: 0.9, energyActive: 511.2, voltage: 399.1, current: 64.9, frequency: 49.99, thdCurrent: null, thdVoltage: null },
-  { id: "PM-MCC1-02", name: "MCC 1 Meter 2", location: "MCC 1", model: "ACREL AMC96", role: "distribution", status: "warning", power: 38.2, powerFactor: 0.89, energyActive: 458.4, voltage: 398.7, current: 58.2, frequency: 50.0, thdCurrent: null, thdVoltage: null },
-  // ---- MCC 2 - ACREL AMC96 (opsi /H terpasang -> THD tersedia) ----
+  // ---- MCC 1 - ACREL AMC96 ----
+  { id: "PM-MCC1-01", name: "MCC 1 Meter 1", location: "MCC 1", model: "ACREL AMC96", role: "distribution", status: "online", power: 42.6, powerFactor: 0.9, energyActive: 511.2, voltage: 399.1, current: 64.9, frequency: 49.99, thdCurrent: 3.6, thdVoltage: 1.8 },
+  { id: "PM-MCC1-02", name: "MCC 1 Meter 2", location: "MCC 1", model: "ACREL AMC96", role: "distribution", status: "warning", power: 38.2, powerFactor: 0.89, energyActive: 458.4, voltage: 398.7, current: 58.2, frequency: 50.0, thdCurrent: 5.4, thdVoltage: 2.6 },
+  // ---- MCC 2 - ACREL AMC96 ----
   { id: "PM-MCC2-01", name: "MCC 2 Meter 1", location: "MCC 2", model: "ACREL AMC96", role: "distribution", status: "online", power: 29.4, powerFactor: 0.88, energyActive: 352.8, voltage: 400.3, current: 44.8, frequency: 50.01, thdCurrent: 4.1, thdVoltage: 2.2 },
   // ---- MCC 3 - ACREL AMC96 ----
-  { id: "PM-MCC3-01", name: "MCC 3 Meter 1", location: "MCC 3", model: "ACREL AMC96", role: "distribution", status: "online", power: 31.7, powerFactor: 0.91, energyActive: 380.4, voltage: 399.6, current: 48.3, frequency: 49.98, thdCurrent: null, thdVoltage: null },
-  { id: "PM-MCC3-02", name: "MCC 3 Meter 2", location: "MCC 3", model: "ACREL AMC96", role: "distribution", status: "online", power: 27.3, powerFactor: 0.9, energyActive: 327.6, voltage: 400.8, current: 41.6, frequency: 50.02, thdCurrent: null, thdVoltage: null },
+  { id: "PM-MCC3-01", name: "MCC 3 Meter 1", location: "MCC 3", model: "ACREL AMC96", role: "distribution", status: "online", power: 31.7, powerFactor: 0.91, energyActive: 380.4, voltage: 399.6, current: 48.3, frequency: 49.98, thdCurrent: 3.2, thdVoltage: 1.6 },
+  { id: "PM-MCC3-02", name: "MCC 3 Meter 2", location: "MCC 3", model: "ACREL AMC96", role: "distribution", status: "online", power: 27.3, powerFactor: 0.9, energyActive: 327.6, voltage: 400.8, current: 41.6, frequency: 50.02, thdCurrent: 2.9, thdVoltage: 1.5 },
   // ---- MCC 4 - ACREL AMC96 (offline) ----
   { id: "PM-MCC4-01", name: "MCC 4 Meter 1", location: "MCC 4", model: "ACREL AMC96", role: "distribution", status: "offline", power: 0, powerFactor: 0, energyActive: 0, voltage: 0, current: 0, frequency: 0, thdCurrent: null, thdVoltage: null, offlineMinutes: 42 },
-  // ---- MCC Pellet 1 - WEIDMULLER EM220 (BasicLine, tanpa harmonik) ----
-  { id: "PM-PEL1-01", name: "MCC Pellet 1", location: "MCC Pellet 1", model: "WEIDMULLER EM220", role: "distribution", status: "online", power: 26.5, powerFactor: 0.93, energyActive: 318.0, voltage: 399.2, current: 40.4, frequency: 50.01, thdCurrent: null, thdVoltage: null },
+  // ---- MCC Pellet 1 - WEIDMULLER EM220 ----
+  { id: "PM-PEL1-01", name: "MCC Pellet 1", location: "MCC Pellet 1", model: "WEIDMULLER EM220", role: "distribution", status: "online", power: 26.5, powerFactor: 0.93, energyActive: 318.0, voltage: 399.2, current: 40.4, frequency: 50.01, thdCurrent: 3.7, thdVoltage: null },
   // ---- MCC Pellet 2 - WEIDMULLER EM220 ----
-  { id: "PM-PEL2-01", name: "MCC Pellet 2", location: "MCC Pellet 2", model: "WEIDMULLER EM220", role: "distribution", status: "online", power: 24.1, powerFactor: 0.92, energyActive: 289.2, voltage: 398.6, current: 36.7, frequency: 49.99, thdCurrent: null, thdVoltage: null },
+  { id: "PM-PEL2-01", name: "MCC Pellet 2", location: "MCC Pellet 2", model: "WEIDMULLER EM220", role: "distribution", status: "online", power: 24.1, powerFactor: 0.92, energyActive: 289.2, voltage: 398.6, current: 36.7, frequency: 49.99, thdCurrent: 4.3, thdVoltage: null },
   // ---- MCC Pellet 3 - WEIDMULLER EM220 ----
-  { id: "PM-PEL3-01", name: "MCC Pellet 3", location: "MCC Pellet 3", model: "WEIDMULLER EM220", role: "distribution", status: "online", power: 28.9, powerFactor: 0.94, energyActive: 346.8, voltage: 400.5, current: 44.0, frequency: 50.03, thdCurrent: null, thdVoltage: null },
+  { id: "PM-PEL3-01", name: "MCC Pellet 3", location: "MCC Pellet 3", model: "WEIDMULLER EM220", role: "distribution", status: "online", power: 28.9, powerFactor: 0.94, energyActive: 346.8, voltage: 400.5, current: 44.0, frequency: 50.03, thdCurrent: 3.5, thdVoltage: null },
 ];
 
 /**
@@ -282,6 +282,8 @@ export function generateDailyProfile(): TimeSeriesPoint[] {
       voltage: 398 + Math.random() * 5,
       current: round1((power * 1000) / (380 * 1.732 * 0.93)),
       frequency: round2(50 + (Math.random() - 0.5) * 0.06),
+      powerFactor: round2(pf),
+      thdCurrent: round1(2 + Math.random() * 4),
     });
   }
 
@@ -349,6 +351,8 @@ export function generateProfileForRange(
         voltage: 398 + rand() * 5,
         current: 0,
         frequency: round2(50 + (rand() - 0.5) * 0.06),
+        powerFactor: round2(pf),
+        thdCurrent: round1(2 + rand() * 4),
       });
     }
   } else if (days <= 60) {
@@ -375,6 +379,8 @@ export function generateProfileForRange(
         voltage: 400,
         current: 0,
         frequency: round2(50 + (rand() - 0.5) * 0.06),
+        powerFactor: round2(pf),
+        thdCurrent: round1(2 + rand() * 4),
       });
     }
   } else {
@@ -401,6 +407,8 @@ export function generateProfileForRange(
         voltage: 400,
         current: 0,
         frequency: round2(50 + (rand() - 0.5) * 0.06),
+        powerFactor: round2(pf),
+        thdCurrent: round1(2 + rand() * 4),
       });
     }
   }
@@ -486,20 +494,6 @@ export function getTotals() {
     offline,
     total: DEVICES.length,
   };
-}
-
-/** Meter yang punya data THD (untuk halaman Power Quality) */
-export function getDevicesWithTHD() {
-  return DEVICES.filter(
-    (d) => d.status !== "offline" && d.thdCurrent !== null,
-  );
-}
-
-/** Meter yang modelnya TIDAK mendukung THD sama sekali */
-export function getDevicesWithoutTHDSupport() {
-  return DEVICES.filter(
-    (d) => !d.capabilities.thdCurrent || d.thdCurrent === null,
-  );
 }
 
 export const ALARMS: Alarm[] = [

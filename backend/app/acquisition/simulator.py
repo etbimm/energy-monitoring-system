@@ -16,15 +16,15 @@ NOMINAL = {
     "PM-LVMDP-OUT-02": {"power": 71.8, "pf": 0.90, "energy": 861.6, "thd_i": 4.2, "thd_u": 2.1},
     "PM-LVMDP-OUT-03": {"power": 55.2, "pf": 0.92, "energy": 662.4, "thd_i": 3.4, "thd_u": 1.7},
     "PM-MVMDP-01": {"power": 64.5, "pf": 0.95, "energy": 774.0, "thd_i": 5.8, "thd_u": 2.9},
-    "PM-MCC1-01": {"power": 42.6, "pf": 0.90, "energy": 511.2},
-    "PM-MCC1-02": {"power": 38.2, "pf": 0.89, "energy": 458.4},
+    "PM-MCC1-01": {"power": 42.6, "pf": 0.90, "energy": 511.2, "thd_i": 3.6, "thd_u": 1.8},
+    "PM-MCC1-02": {"power": 38.2, "pf": 0.89, "energy": 458.4, "thd_i": 5.4, "thd_u": 2.6},
     "PM-MCC2-01": {"power": 29.4, "pf": 0.88, "energy": 352.8, "thd_i": 4.1, "thd_u": 2.2},
-    "PM-MCC3-01": {"power": 31.7, "pf": 0.91, "energy": 380.4},
-    "PM-MCC3-02": {"power": 27.3, "pf": 0.90, "energy": 327.6},
-    "PM-MCC4-01": {"power": 0.0, "pf": 0.90, "energy": 210.0, "offline": True},
-    "PM-PEL1-01": {"power": 26.5, "pf": 0.93, "energy": 318.0},
-    "PM-PEL2-01": {"power": 24.1, "pf": 0.92, "energy": 289.2},
-    "PM-PEL3-01": {"power": 28.9, "pf": 0.94, "energy": 346.8},
+    "PM-MCC3-01": {"power": 31.7, "pf": 0.91, "energy": 380.4, "thd_i": 3.2, "thd_u": 1.6},
+    "PM-MCC3-02": {"power": 27.3, "pf": 0.90, "energy": 327.6, "thd_i": 2.9, "thd_u": 1.5},
+    "PM-MCC4-01": {"power": 0.0, "pf": 0.90, "energy": 210.0, "thd_i": 3.4, "thd_u": 1.7, "offline": True},
+    "PM-PEL1-01": {"power": 26.5, "pf": 0.93, "energy": 318.0, "thd_i": 3.7, "thd_u": 1.9},
+    "PM-PEL2-01": {"power": 24.1, "pf": 0.92, "energy": 289.2, "thd_i": 4.3, "thd_u": 2.1},
+    "PM-PEL3-01": {"power": 28.9, "pf": 0.94, "energy": 346.8, "thd_i": 3.5, "thd_u": 1.7},
 }
 
 

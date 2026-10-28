@@ -17,13 +17,13 @@ from app.schemas import (
 from app.services.realtime import device_status
 
 
-def _caps(raw: dict | None) -> MeterCapabilities:
+def _caps(raw: dict | None, model: str) -> MeterCapabilities:
     data = raw or {}
     return MeterCapabilities(
         per_phase=data.get("perPhase", True),
         apparent_energy_register=data.get("apparentEnergyRegister", False),
-        thd_current=data.get("thdCurrent", False),
-        thd_voltage=data.get("thdVoltage", False),
+        thd_current=True,
+        thd_voltage=model != "WEIDMULLER EM220",
         max_harmonic_order=data.get("maxHarmonicOrder", 0),
         unbalance=data.get("unbalance", False),
         reactive_energy=data.get("reactiveEnergy", True),
@@ -96,7 +96,7 @@ async def list_devices(session: AsyncSession) -> list[DeviceOut]:
                 model=device.model,
                 role=device.role,
                 status=status,
-                capabilities=_caps(device.capabilities),
+                capabilities=_caps(device.capabilities, device.model),
                 voltage=reading.voltage if has_reading else None,
                 current=reading.current if has_reading else None,
                 power=reading.power if has_reading else None,
@@ -193,6 +193,8 @@ def _point(ts: datetime, row) -> TimeSeriesPoint:
         voltage=row.voltage,
         current=row.current,
         frequency=row.frequency,
+        power_factor=row.power_factor,
+        thd_current=row.thd_current,
     )
 
 
@@ -232,6 +234,11 @@ async def get_readings(
                 func.avg(Reading.voltage).label("voltage"),
                 func.avg(Reading.current).label("current"),
                 func.avg(Reading.frequency).label("frequency"),
+                (
+                    func.sum(Reading.power)
+                    / func.nullif(func.sum(Reading.apparent_power), 0)
+                ).label("power_factor"),
+                func.avg(Reading.thd_current).label("thd_current"),
             )
             .join(Device, Device.id == Reading.device_id)
             .where(*filters, device_filter)
@@ -255,6 +262,11 @@ async def get_readings(
             func.avg(Reading.voltage).label("voltage"),
             func.avg(Reading.current).label("current"),
             func.avg(Reading.frequency).label("frequency"),
+            (
+                func.avg(Reading.power)
+                / func.nullif(func.avg(Reading.apparent_power), 0)
+            ).label("power_factor"),
+            func.avg(Reading.thd_current).label("thd_current"),
         )
         .join(Device, Device.id == Reading.device_id)
         .where(*filters, device_filter)
@@ -273,6 +285,11 @@ async def get_readings(
             func.avg(per_device.c.voltage).label("voltage"),
             func.avg(per_device.c.current).label("current"),
             func.avg(per_device.c.frequency).label("frequency"),
+            (
+                func.sum(per_device.c.power)
+                / func.nullif(func.sum(per_device.c.apparent_power), 0)
+            ).label("power_factor"),
+            func.avg(per_device.c.thd_current).label("thd_current"),
         )
         .group_by(per_device.c.bucket)
         .order_by(per_device.c.bucket)

@@ -73,7 +73,7 @@ def decode(
         slice_ = words[start : start + reg.count]
         if start < 0 or len(slice_) < reg.count:
             continue
-        raw = decode_raw(reg.type, slice_, profile.word_order)
+        raw = decode_raw(reg.type, slice_, reg.word_order or profile.word_order)
         if isinstance(raw, float) and (math.isnan(raw) or math.isinf(raw)):
             continue
         out[reg.label] = {

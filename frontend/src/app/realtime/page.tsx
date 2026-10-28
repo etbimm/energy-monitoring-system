@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DataState } from "@/components/ui/data-state";
+import { DemoDataNotice } from "@/components/ui/demo-data-notice";
 import { getPanelsForDevices } from "@/lib/device-data";
 import { useEMSData } from "@/lib/use-ems-data";
 import { formatNumber, formatTime } from "@/lib/format";
@@ -12,7 +13,7 @@ import { cn } from "@/lib/utils";
 import type { Device } from "@/lib/types";
 
 export default function RealtimePage() {
-  const { devices, summary, loading, error, realtime } = useEMSData();
+  const { devices, summary, loading, error, isDemo, realtime } = useEMSData();
   const panels = getPanelsForDevices(devices);
   const totals = summary ?? {
     totalPower: 0,
@@ -32,10 +33,15 @@ export default function RealtimePage() {
         description="Nilai terkini setiap power meter"
         action={
           <span className="text-xs text-stone-500">
-            {realtime ? "Live via WebSocket" : "WebSocket terputus - polling aktif"}
+            {isDemo
+              ? "Data simulasi"
+              : realtime
+                ? "Live via WebSocket"
+                : "WebSocket terputus - polling aktif"}
           </span>
         }
       />
+      {isDemo ? <DemoDataNotice /> : null}
       <DataState loading={loading} error={error} />
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">

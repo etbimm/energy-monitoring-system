@@ -73,6 +73,11 @@ async def run() -> None:
                         caps = device["capabilities"] or {}
                         if isinstance(caps, str):
                             caps = json.loads(caps)
+                        caps = {
+                            **caps,
+                            "thdCurrent": True,
+                            "thdVoltage": device["model"] != "WEIDMULLER EM220",
+                        }
                         topic_tele = f"{settings.mqtt_topic_prefix}/meter/{code}/telemetry"
                         topic_status = f"{settings.mqtt_topic_prefix}/meter/{code}/status"
                         try:

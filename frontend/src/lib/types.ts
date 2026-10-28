@@ -142,7 +142,9 @@ export interface TimeSeriesPoint {
   energyApparent: number; // kVAh kumulatif
   voltage: number; // V
   current: number; // A
+  powerFactor: number;
   frequency: number; // Hz
+  thdCurrent: number | null; // %
 }
 
 export interface Alarm {

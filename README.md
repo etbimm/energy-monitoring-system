@@ -14,8 +14,6 @@ Power Meter (Modbus RTU / TCP)
   -> Frontend Dashboard (Next.js)
 ```
 
-Node-RED tidak dipakai.
-
 ## Struktur Folder
 
 ```
@@ -56,7 +54,8 @@ Frontend mengambil data dari API backend. Secara default API URL adalah
 `http://localhost:4000`; atur `NEXT_PUBLIC_API_URL` sebelum menjalankan
 frontend jika backend berada di host/port lain. WebSocket menggunakan URL yang
 sama dengan skema `ws://`; atur `NEXT_PUBLIC_WS_URL` hanya jika endpoint WS
-berbeda.
+berbeda. Jika backend belum tersedia atau belum memiliki data meter, dashboard
+menampilkan fixture simulasi realistis dan menandainya sebagai **Mode demo**.
 
 ## Status
 

@@ -18,6 +18,7 @@ class RegisterDef:
     scale: float
     poll: bool = True
     note: str = ""
+    word_order: Literal["little", "big"] | None = None
 
 
 @dataclass(frozen=True)
@@ -135,7 +136,7 @@ AMC96 = MeterProfile(
     default_slave_id=1,
     default_baud=9600,
     function_code="FC03",
-    notes="Register THD mengembalikan 0/error bila opsi /H tidak terpasang.",
+    notes="THD arus dan tegangan tersedia pada unit meter.",
     available=("V", "I", "kW", "kVA", "kVAR", "kWh", "kVARh", "THD-i", "THD-u", "PF", "Hz"),
     unavailable=("kVAh", "unbalance", "demand"),
     registers=(
@@ -150,8 +151,8 @@ AMC96 = MeterProfile(
         RegisterDef(8, 1, "S semu", "apparent_power", "kVA", "uint16", 10),
         RegisterDef(9, 1, "PF", "pf_register", "-", "uint16", 100, poll=False),
         RegisterDef(10, 1, "Frekuensi", "frequency", "Hz", "uint16", 10),
-        RegisterDef(11, 1, "THD I (opsi /H)", "thd_current_l1", "%", "uint16", 10, note="Hanya bila opsi /H"),
-        RegisterDef(12, 1, "THD U (opsi /H)", "thd_voltage_l1", "%", "uint16", 10),
+        RegisterDef(11, 1, "THD I L1", "thd_current_l1", "%", "uint16", 10),
+        RegisterDef(12, 1, "THD U L1", "thd_voltage_l1", "%", "uint16", 10),
         RegisterDef(30, 2, "Active energy import", "energy_active", "kWh", "uint32", 100),
         RegisterDef(32, 2, "Reactive energy import", "energy_reactive", "kVARh", "uint32", 100),
     ),
@@ -162,10 +163,10 @@ EM220 = MeterProfile(
     brand="Weidmuller",
     default_slave_id=1,
     default_baud=9600,
-    function_code="FC03",
-    notes="BasicLine tanpa harmonik. Update register internal tiap 1 detik.",
-    available=("V", "I", "kW", "kVA", "kVAR", "kWh", "kVARh", "PF", "Hz", "demand"),
-    unavailable=("kVAh", "THD-i", "THD-u", "unbalance"),
+    function_code="FC04",
+    notes="THD-I fase A/B/C float32 ABCD di register 0x00F0/0x00F2/0x00F4. THD-U tidak tersedia. Update internal tiap 1 detik.",
+    available=("V", "I", "kW", "kVA", "kVAR", "kWh", "kVARh", "THD-i", "PF", "Hz", "demand"),
+    unavailable=("kVAh", "THD-u", "unbalance"),
     registers=(
         RegisterDef(0, 1, "U L1", "voltage_l1", "V", "uint16", 10),
         RegisterDef(1, 1, "U L2", "voltage_l2", "V", "uint16", 10),
@@ -182,6 +183,9 @@ EM220 = MeterProfile(
         RegisterDef(22, 2, "Reactive energy import", "energy_reactive", "kVARh", "uint32", 100),
         RegisterDef(24, 2, "Active energy export", "energy_active_export", "kWh", "uint32", 100, poll=False),
         RegisterDef(26, 2, "Reactive energy export", "energy_reactive_export", "kVARh", "uint32", 100, poll=False),
+        RegisterDef(0x00F0, 2, "THD I L1", "thd_current_l1", "%", "float32", 1, word_order="big"),
+        RegisterDef(0x00F2, 2, "THD I L2", "thd_current_l2", "%", "float32", 1, word_order="big"),
+        RegisterDef(0x00F4, 2, "THD I L3", "thd_current_l3", "%", "float32", 1, word_order="big"),
     ),
 )
 

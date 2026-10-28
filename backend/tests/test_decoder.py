@@ -69,6 +69,14 @@ def test_em220_uint32_scale():
     assert decoded["P aktif"]["value"] == 26.5
 
 
+def test_em220_thd_i_big_endian_registers():
+    words = [0x3F80, 0x0000, 0x4000, 0x0000, 0x4040, 0x0000]
+    decoded = decode(PROFILES["WEIDMULLER EM220"], words, base_addr=0x00F0)
+    assert decoded["THD I L1"]["value"] == 1
+    assert decoded["THD I L2"]["value"] == 2
+    assert decoded["THD I L3"]["value"] == 3
+
+
 def test_registry_integrity():
     assert len(PROFILES) == 5
     assert len(DEVICE_MODEL) == 18
@@ -77,9 +85,16 @@ def test_registry_integrity():
     with_kvah = [p for p in PROFILES.values() if "kVAh" in p.available]
     assert len(with_kvah) == 1
     assert with_kvah[0].model == "SIEMENS PAC3220"
-    without_thd = [p for p in PROFILES.values() if "THD-i" not in p.available]
-    assert len(without_thd) == 1
-    assert without_thd[0].model == "WEIDMULLER EM220"
+    with_thd = [p for p in PROFILES.values() if "THD-i" in p.available]
+    assert len(with_thd) == len(PROFILES)
+    assert "THD-u" not in PROFILES["WEIDMULLER EM220"].available
+    assert PROFILES["WEIDMULLER EM220"].function_code == "FC04"
+    assert PROFILES["WEIDMULLER EM220"].word_order == "little"
+    assert {
+        reg.word_order
+        for reg in PROFILES["WEIDMULLER EM220"].registers
+        if reg.key.startswith("thd_current_")
+    } == {"big"}
 
 
 def test_register_layout():

@@ -6,10 +6,8 @@ import type { MeterCapabilities, MeterModel } from "./types";
  * Sumber: datasheet masing-masing model (folder Datasheet Power Meter).
  * Ringkasan lengkap + tabel register ada di docs/parameter-specification.md.
  *
- * Catatan penting:
- * - Kapabilitas di sini adalah KEMAMPUAN ALAT, bukan kondisi unit di lapangan.
- *   Contoh: AMC96 mendukung THD hanya bila opsi /H terpasang, jadi field
- *   THD pada device tetap boleh null walau capabilities menyatakan true.
+ * Kapabilitas di sini adalah kemampuan alat, sedangkan nilai yang belum dibaca
+ * tetap dapat null sampai telemetry aktual diterima.
  */
 export const METER_MODELS: Record<
   MeterModel,
@@ -58,7 +56,7 @@ export const METER_MODELS: Record<
   },
   "ACREL AMC96": {
     label: "Acrel AMC96",
-    note: "Multi-function meter, THD hanya bila opsi /H terpasang",
+    note: "Multi-function meter dengan pengukuran THD",
     perPhase: true,
     apparentEnergyRegister: false,
     thdCurrent: true,
@@ -70,10 +68,10 @@ export const METER_MODELS: Record<
   },
   "WEIDMULLER EM220": {
     label: "Weidmuller EM220",
-    note: "BasicLine, tanpa harmonik, update 1 detik",
+    note: "THD-I tersedia; THD-U tidak tersedia. Update 1 detik",
     perPhase: true,
     apparentEnergyRegister: false,
-    thdCurrent: false,
+    thdCurrent: true,
     thdVoltage: false,
     maxHarmonicOrder: 0,
     unbalance: false,

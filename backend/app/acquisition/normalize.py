@@ -81,7 +81,6 @@ def to_telemetry(
     phases = {}
     for index, name in enumerate(("L1", "L2", "L3"), start=1):
         suffix = str(index)
-        phase_voltage = _get(decoded, f"voltage_l{suffix}", f"voltage_l{suffix}{suffix % 3 + 1}")
         if name == "L1":
             phase_voltage = _get(decoded, "voltage_l1", "voltage_l12")
         elif name == "L2":
