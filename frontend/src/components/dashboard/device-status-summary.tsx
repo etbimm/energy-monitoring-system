@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { DEVICES } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
+import type { Device } from "@/lib/types";
 
 /**
  * Ringkasan status seluruh power meter untuk halaman Overview.
@@ -11,10 +11,10 @@ import { cn } from "@/lib/utils";
  * halaman ringkasan). Yang ditampilkan: hitungan per status + daftar device
  * yang bermasalah saja (warning & offline).
  */
-export function DeviceStatusSummary() {
-  const online = DEVICES.filter((d) => d.status === "online");
-  const warning = DEVICES.filter((d) => d.status === "warning");
-  const offline = DEVICES.filter((d) => d.status === "offline");
+export function DeviceStatusSummary({ devices }: { devices: Device[] }) {
+  const online = devices.filter((d) => d.status === "online");
+  const warning = devices.filter((d) => d.status === "warning");
+  const offline = devices.filter((d) => d.status === "offline");
   const attention = [...warning, ...offline];
 
   return (
@@ -23,7 +23,7 @@ export function DeviceStatusSummary() {
         <CountTile
           label="Online"
           value={online.length}
-          total={DEVICES.length}
+          total={devices.length}
           dot="bg-emerald-500"
           text="text-emerald-700"
           ring="ring-emerald-200"
@@ -31,7 +31,7 @@ export function DeviceStatusSummary() {
         <CountTile
           label="Warning"
           value={warning.length}
-          total={DEVICES.length}
+          total={devices.length}
           dot="bg-amber-500"
           text="text-amber-700"
           ring="ring-amber-200"
@@ -39,7 +39,7 @@ export function DeviceStatusSummary() {
         <CountTile
           label="Offline"
           value={offline.length}
-          total={DEVICES.length}
+          total={devices.length}
           dot="bg-brand-600"
           text="text-brand-700"
           ring="ring-brand-200"
@@ -50,7 +50,7 @@ export function DeviceStatusSummary() {
           </p>
           <p className="mt-1 flex items-baseline gap-1.5">
             <span className="text-xl font-semibold tabular-nums text-stone-900">
-              {DEVICES.length}
+              {devices.length}
             </span>
             <span className="text-[11px] text-stone-500">unit</span>
           </p>
@@ -94,7 +94,7 @@ export function DeviceStatusSummary() {
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-stone-200 pt-3">
         <p className="text-xs text-stone-500">
-          Ringkasan status seluruh {DEVICES.length} power meter
+          Ringkasan status seluruh {devices.length} power meter
         </p>
         <Link
           href="/devices"
@@ -102,7 +102,7 @@ export function DeviceStatusSummary() {
         >
           Lihat Semua Device
           <span className="rounded bg-white/20 px-1.5 py-0.5 text-xs font-bold tabular-nums">
-            {DEVICES.length}
+            {devices.length}
           </span>
           <ArrowRight className="h-4 w-4" aria-hidden />
         </Link>

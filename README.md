@@ -1,31 +1,46 @@
 # EMS - Energy Monitoring System
 
-Dashboard monitoring energi untuk beberapa power meter.
+Dashboard monitoring energi untuk 18 power meter di Java Wood Pellet.
 
 ## Alur Data
 
 ```
-Power Meter (Modbus RTU)
-  -> RS485 to Ethernet Converter
+Power Meter (Modbus RTU / TCP)
+  -> RS485 to Ethernet Converter (meter RS485)
   -> Switch / Network
-  -> Server
-  -> Node-RED (parsing & filtering raw -> data matang)
+  -> Acquisition (Python + pymodbus, decode per model)
   -> MQTT Broker (Mosquitto)
-  -> Backend API (Node.js) + Database (PostgreSQL + TimescaleDB)
+  -> Backend API (FastAPI) + PostgreSQL/TimescaleDB
   -> Frontend Dashboard (Next.js)
 ```
+
+Node-RED tidak dipakai.
 
 ## Struktur Folder
 
 ```
 ems/
-|- frontend/     Dashboard Next.js (sedang dikerjakan)
-|- backend/      REST API Node.js (placeholder)
-|- database/     SQL schema + seed untuk PostgreSQL/TimescaleDB
-|- node-red/     Flow parsing Modbus (placeholder)
+|- frontend/     Dashboard Next.js (REST API + WebSocket)
+|- backend/      FastAPI + worker akuisisi Modbus
+|- database/     SQL init PostgreSQL/TimescaleDB
+|- mqtt/         Konfigurasi Mosquitto
 |- docs/         Dokumentasi arsitektur & data model
 `- scripts/      Utilitas
 ```
+
+## Menjalankan Backend + Database + MQTT
+
+```bash
+docker compose up --build
+```
+
+| Service | URL |
+|---|---|
+| API + Swagger | http://localhost:4000/docs |
+| PostgreSQL | localhost:5432 (user/db `ems`) |
+| MQTT | localhost:1883 |
+
+Mode akuisisi default: `simulator` (tanpa hardware). Set `ACQUISITION_MODE=modbus` di `.env` untuk poll meter sungguhan.
 
 ## Menjalankan Frontend
 
@@ -37,20 +52,27 @@ npm run dev
 
 Buka http://localhost:3000
 
-> Saat ini seluruh data masih dummy (lihat `src/lib/mock-data.ts`).
-> Nanti diganti dengan fetch ke backend API.
+Frontend mengambil data dari API backend. Secara default API URL adalah
+`http://localhost:4000`; atur `NEXT_PUBLIC_API_URL` sebelum menjalankan
+frontend jika backend berada di host/port lain. WebSocket menggunakan URL yang
+sama dengan skema `ws://`; atur `NEXT_PUBLIC_WS_URL` hanya jika endpoint WS
+berbeda.
 
 ## Status
 
 - [x] Struktur monorepo
 - [x] Frontend scaffold dengan mock data
-- [ ] Backend API
-- [ ] PostgreSQL + TimescaleDB
-- [ ] MQTT broker + Node-RED flow
-- [ ] Integrasi data real-time (WebSocket)
+- [x] Backend API FastAPI
+- [x] PostgreSQL + TimescaleDB
+- [x] MQTT broker (Mosquitto)
+- [x] Akuisisi pymodbus + profil decode per model
+- [x] Integrasi dashboard ke API (REST + WebSocket)
+- [x] Histori API, tabel pembacaan, dan export CSV
+- [x] Acknowledge alarm dari dashboard
 
 ## Dokumentasi
 
 - [Arsitektur](docs/architecture.md)
 - [Data Model](docs/data-model.md)
-- [Node-RED Flow](docs/node-red-flow.md)
+- [Spesifikasi Parameter](docs/parameter-specification.md)
+- [Backend](backend/README.md)

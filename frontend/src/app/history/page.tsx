@@ -1,46 +1,136 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Download } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { PowerChart } from "@/components/dashboard/power-chart";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { DataState } from "@/components/ui/data-state";
 import {
   DateRangePicker,
   type RangePreset,
 } from "@/components/ui/date-range-picker";
-import { generateProfileForRange } from "@/lib/mock-data";
+import { getReadings } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { POWER_QUALITY_SERIES } from "@/components/dashboard/power-chart";
+import type { TimeSeriesPoint } from "@/lib/types";
 
-function isoDate(d: Date): string {
-  const off = d.getTimezoneOffset();
-  return new Date(d.getTime() - off * 60_000).toISOString().slice(0, 10);
+function isoDate(date: Date): string {
+  const offset = date.getTimezoneOffset();
+  return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 10);
+}
+
+function dateParam(value: string, endOfDay = false): string {
+  return new Date(`${value}T${endOfDay ? "23:59:59" : "00:00:00"}`).toISOString();
 }
 
 export default function HistoryPage() {
   const now = new Date();
   const [range, setRange] = useState({
-    from: isoDate(new Date(now.getTime() - 86400_000)),
+    from: isoDate(new Date(now.getTime() - 86_400_000)),
     to: isoDate(now),
     preset: "24h" as RangePreset,
   });
+  const [data, setData] = useState<TimeSeriesPoint[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const data = useMemo(
-    () => generateProfileForRange(range.from, range.to),
-    [range.from, range.to],
+  useEffect(() => {
+    let active = true;
+    if (!range.from || !range.to || range.from > range.to) {
+      setError("Rentang tanggal tidak valid. Pilih tanggal mulai dan akhir yang benar.");
+      setLoading(false);
+      setData([]);
+      return () => {
+        active = false;
+      };
+    }
+
+    setLoading(true);
+    const days =
+      (new Date(`${range.to}T00:00:00`).getTime() -
+        new Date(`${range.from}T00:00:00`).getTime()) /
+      86_400_000;
+    getReadings({
+      from: dateParam(range.from),
+      to: dateParam(range.to, true),
+      bucket: days <= 2 ? "5m" : "1h",
+    })
+      .then((points) => {
+        if (active) {
+          setData(points);
+          setError(null);
+        }
+      })
+      .catch((cause: unknown) => {
+        if (active) {
+          setData([]);
+          setError(cause instanceof Error ? cause.message : "Gagal memuat histori.");
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [range.from, range.to]);
+
+  const totalEnergy = data.length > 1
+    ? Math.max(0, data[data.length - 1].energy - data[0].energy)
+    : 0;
+  const totalReactive = data.length > 1
+    ? Math.max(0, data[data.length - 1].energyReactive - data[0].energyReactive)
+    : 0;
+  const totalApparent = data.length > 1
+    ? Math.max(0, data[data.length - 1].energyApparent - data[0].energyApparent)
+    : 0;
+  const peak = data.reduce((maximum, point) => Math.max(maximum, point.power), 0);
+  const peakApparent = data.reduce(
+    (maximum, point) => Math.max(maximum, point.apparentPower),
+    0,
+  );
+  const peakReactive = data.reduce(
+    (maximum, point) => Math.max(maximum, point.reactivePower),
+    0,
+  );
+  const avg = data.length
+    ? data.reduce((total, point) => total + point.power, 0) / data.length
+    : 0;
+  const csv = useMemo(
+    () => [
+      ["Timestamp", "kW", "kVA", "kVAR", "kWh", "kVARh", "kVAh", "V", "A", "Hz"],
+      ...data.map((point) => [
+        point.timestamp,
+        point.power,
+        point.apparentPower,
+        point.reactivePower,
+        point.energy,
+        point.energyReactive,
+        point.energyApparent,
+        point.voltage,
+        point.current,
+        point.frequency,
+      ]),
+    ],
+    [data],
   );
 
-  const totalEnergy = data.length ? data[data.length - 1].energy : 0;
-  const totalReactive = data.length ? data[data.length - 1].energyReactive : 0;
-  const totalApparent = data.length ? data[data.length - 1].energyApparent : 0;
-  const peak = data.reduce((m, p) => (p.power > m ? p.power : m), 0);
-  const peakApparent = data.reduce((m, p) => (p.apparentPower > m ? p.apparentPower : m), 0);
-  const peakReactive = data.reduce((m, p) => (p.reactivePower > m ? p.reactivePower : m), 0);
-  const avg = data.length ? totalEnergy / data.length : 0;
+  function exportCsv() {
+    const content = csv.map((row) => row.join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `ems-history-${range.from}-${range.to}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <>
       <PageHeader title="History" description="Analitik konsumsi energi" />
+      <DataState loading={loading} error={error} />
 
       <Card>
         <CardHeader
@@ -57,19 +147,11 @@ export default function HistoryPage() {
         <SummaryCard label="Total Energy" value={formatNumber(totalEnergy)} unit="kWh" />
         <SummaryCard label="Rata-rata" value={formatNumber(avg)} unit="kW" />
         <SummaryCard label="Beban Puncak" value={formatNumber(peak)} unit="kW" />
-        <SummaryCard
-          label="Daya Semu (kVA)"
-          value={formatNumber(peakApparent)}
-          unit="kVA"
-        />
-        <SummaryCard
-          label="Daya Reaktif (kVAR)"
-          value={formatNumber(peakReactive)}
-          unit="kVAR"
-        />
+        <SummaryCard label="Daya Semu Puncak" value={formatNumber(peakApparent)} unit="kVA" />
+        <SummaryCard label="Daya Reaktif Puncak" value={formatNumber(peakReactive)} unit="kVAR" />
         <SummaryCard
           label="PF Rata-rata"
-          value={peakApparent > 0 ? formatNumber(peak / peakApparent, 3) : "-"}
+          value={peakApparent > 0 ? formatNumber(avg / (data.reduce((sum, point) => sum + point.apparentPower, 0) / data.length), 3) : "-"}
           unit=""
         />
       </div>
@@ -81,13 +163,60 @@ export default function HistoryPage() {
       </div>
 
       <Card className="mt-4">
-        <CardHeader title="Data" subtitle="Tabel mentah (belum diimplementasi)" />
+        <CardHeader
+          title="Data Historis"
+          subtitle="Pembacaan meter incoming pada rentang terpilih"
+          action={
+            <button
+              type="button"
+              onClick={exportCsv}
+              disabled={data.length === 0}
+              className="inline-flex items-center gap-2 rounded-lg border border-stone-300 px-3 py-2 text-xs font-medium text-stone-700 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Download className="h-4 w-4" aria-hidden />
+              Export CSV
+            </button>
+          }
+        />
         <CardContent>
-          <p className="text-sm text-stone-600">
-            Nanti halaman ini mengambil data dari backend (TimescaleDB) sesuai
-            filter tanggal, plus mendukung export CSV dan perbandingan antar
-            periode.
-          </p>
+          {data.length === 0 ? (
+            <p className="text-sm text-stone-500">Tidak ada data pada rentang tanggal ini.</p>
+          ) : (
+            <div className="max-h-[480px] overflow-auto">
+              <table className="w-full min-w-[800px] text-left text-xs">
+                <thead className="sticky top-0 bg-stone-50 text-stone-500">
+                  <tr>
+                    <th className="px-2 py-2 font-medium">Waktu</th>
+                    <th className="px-2 py-2 text-right font-medium">kW</th>
+                    <th className="px-2 py-2 text-right font-medium">kVA</th>
+                    <th className="px-2 py-2 text-right font-medium">kVAR</th>
+                    <th className="px-2 py-2 text-right font-medium">kWh</th>
+                    <th className="px-2 py-2 text-right font-medium">kVARh</th>
+                    <th className="px-2 py-2 text-right font-medium">kVAh</th>
+                    <th className="px-2 py-2 text-right font-medium">V</th>
+                    <th className="px-2 py-2 text-right font-medium">A</th>
+                    <th className="px-2 py-2 text-right font-medium">Hz</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.map((point) => (
+                    <tr key={point.timestamp} className="border-t border-stone-100">
+                      <td className="whitespace-nowrap px-2 py-2">
+                        {new Date(point.timestamp).toLocaleString("id-ID")}
+                      </td>
+                      {[point.power, point.apparentPower, point.reactivePower,
+                        point.energy, point.energyReactive, point.energyApparent,
+                        point.voltage, point.current, point.frequency].map((value, index) => (
+                        <td key={index} className="px-2 py-2 text-right tabular-nums">
+                          {formatNumber(value, index >= 6 ? 2 : 1)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </>
@@ -105,9 +234,7 @@ function SummaryCard({
 }) {
   return (
     <Card className="min-w-0 border-brand-800 bg-brand-800 p-3 text-white sm:p-5">
-      <p className="text-xs font-medium uppercase tracking-wider text-brand-200">
-        {label}
-      </p>
+      <p className="text-xs font-medium uppercase tracking-wider text-brand-200">{label}</p>
       <p className="mt-2 text-xl font-semibold tabular-nums sm:text-2xl">
         {value}
         {unit ? <span className="ml-1 text-sm font-normal text-brand-200">{unit}</span> : null}

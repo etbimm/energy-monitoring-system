@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { Bolt, PlugZap, Wifi } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { KpiCard } from "@/components/dashboard/kpi-card";
@@ -5,11 +8,11 @@ import { PowerChart } from "@/components/dashboard/power-chart";
 import { LoadDistributionChart } from "@/components/dashboard/load-distribution-chart";
 import { DeviceStatusSummary } from "@/components/dashboard/device-status-summary";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import {
-  generateDailyProfile,
-  getLoadByDevice,
-  getTotals,
-} from "@/lib/mock-data";
+import { DataState } from "@/components/ui/data-state";
+import { getReadings } from "@/lib/api";
+import { getLoadByPanel } from "@/lib/device-data";
+import { useEMSData } from "@/lib/use-ems-data";
+import type { TimeSeriesPoint } from "@/lib/types";
 import { formatNumber } from "@/lib/format";
 
 const OVERVIEW_SERIES = [
@@ -18,9 +21,54 @@ const OVERVIEW_SERIES = [
 ];
 
 export default function OverviewPage() {
-  const totals = getTotals();
-  const profile = generateDailyProfile();
-  const loadByDevice = getLoadByDevice();
+  const { devices, summary, loading, error } = useEMSData();
+  const [profile, setProfile] = useState<TimeSeriesPoint[]>([]);
+  const [readingsError, setReadingsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    let active = true;
+    const load = () => {
+      const end = new Date();
+      return getReadings({
+        from: start.toISOString(),
+        to: end.toISOString(),
+        bucket: "5m",
+      })
+        .then((points) => {
+          if (active) {
+            setProfile(points);
+            setReadingsError(null);
+          }
+        })
+        .catch((cause: unknown) => {
+          if (active) {
+            setReadingsError(
+              cause instanceof Error ? cause.message : "Gagal memuat grafik.",
+            );
+          }
+        });
+    };
+    void load();
+    const poll = window.setInterval(() => void load(), 15_000);
+    return () => {
+      active = false;
+      window.clearInterval(poll);
+    };
+  }, []);
+
+  const totals = summary ?? {
+    totalPower: 0,
+    totalApparentPower: 0,
+    totalReactivePower: 0,
+    energyToday: 0,
+    online: 0,
+    warning: 0,
+    offline: 0,
+    total: 0,
+  };
+  const loadByDevice = getLoadByPanel(devices);
 
   return (
     <>
@@ -29,10 +77,12 @@ export default function OverviewPage() {
         description="Ringkasan konsumsi energi seluruh sistem"
         action={
           <span className="text-xs text-stone-500">
-            Data dummy - siintegrasi Node-RED
+            {devices.length} power meter terdaftar
           </span>
         }
       />
+      <DataState loading={loading} error={error} />
+      {readingsError ? <DataState loading={false} error={readingsError} /> : null}
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <KpiCard
@@ -41,21 +91,18 @@ export default function OverviewPage() {
           unit="kW"
           icon={Bolt}
           tone="accent"
-          trend={{ value: "4.2%", positive: true }}
         />
         <KpiCard
           label="Daya Semu"
           value={formatNumber(totals.totalApparentPower)}
           unit="kVA"
           icon={Bolt}
-          trend={{ value: "1.9%", positive: false }}
         />
         <KpiCard
           label="Energy Hari Ini"
           value={formatNumber(totals.energyToday)}
           unit="kWh"
           icon={PlugZap}
-          trend={{ value: "2.8%", positive: false }}
         />
         <KpiCard
           label="Device Online"
@@ -69,7 +116,7 @@ export default function OverviewPage() {
         <Card className="xl:col-span-2">
           <CardHeader
             title="Profil Konsumsi 24 Jam"
-            subtitle="Daya (kW) dan energy kumulatif (kWh) - data dummy"
+            subtitle="Daya (kW) dan energy kumulatif (kWh) - meter incoming"
           />
           <CardContent>
             <PowerChart data={profile} series={OVERVIEW_SERIES} />
@@ -93,7 +140,7 @@ export default function OverviewPage() {
           subtitle="Ringkasan kondisi semua power meter"
         />
         <CardContent>
-          <DeviceStatusSummary />
+          <DeviceStatusSummary devices={devices} />
         </CardContent>
       </Card>
     </>

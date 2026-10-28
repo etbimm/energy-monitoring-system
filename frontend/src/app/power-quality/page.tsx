@@ -1,14 +1,13 @@
+"use client";
+
 import { Activity, CircleAlert, TriangleAlert, Waves } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { PhaseDeviceDetails } from "@/components/dashboard/phase-device-details";
 import { ThdDeviceDetails } from "@/components/dashboard/thd-device-details";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import {
-  DEVICES,
-  getDevicesWithTHD,
-  getDevicesWithoutTHDSupport,
-  getPanels,
-} from "@/lib/mock-data";
+import { DataState } from "@/components/ui/data-state";
+import { getPanelsForDevices } from "@/lib/device-data";
+import { useEMSData } from "@/lib/use-ems-data";
 import {
   FREQUENCY_THRESHOLDS,
   THD_THRESHOLDS,
@@ -19,9 +18,14 @@ import { formatNumber } from "@/lib/format";
 import type { Device } from "@/lib/types";
 
 export default function PowerQualityPage() {
-  const withTHD = getDevicesWithTHD();
-  const withoutTHD = getDevicesWithoutTHDSupport();
-  const panels = getPanels();
+  const { devices, loading, error } = useEMSData();
+  const withTHD = devices.filter(
+    (device) => device.status !== "offline" && device.thdCurrent !== null,
+  );
+  const withoutTHD = devices.filter(
+    (device) => !device.capabilities.thdCurrent || device.thdCurrent === null,
+  );
+  const panels = getPanelsForDevices(devices);
 
   const worst = withTHD.reduce<Device | null>(
     (acc, d) =>
@@ -33,7 +37,7 @@ export default function PowerQualityPage() {
   );
 
   // Frekuensi: seluruh meter mendukungnya, tapi meter offline tidak punya data
-  const live = DEVICES.filter((d) => d.status !== "offline");
+  const live = devices.filter((d) => d.status !== "offline" && d.frequency > 0);
   const freqs = live.map((d) => d.frequency);
   const freqMin = freqs.length ? Math.min(...freqs) : null;
   const freqMax = freqs.length ? Math.max(...freqs) : null;
@@ -48,16 +52,17 @@ export default function PowerQualityPage() {
         description="Kualitas daya: THD, unbalance, dan detail per fasa"
         action={
           <span className="text-xs text-stone-500">
-            THD tersedia pada {withTHD.length} dari {DEVICES.length} power meter
+            THD tersedia pada {withTHD.length} dari {devices.length} power meter
           </span>
         }
       />
+      <DataState loading={loading} error={error} />
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
         <SummaryTile
           label="Meter Termonitor"
           value={String(withTHD.length)}
-          unit={`dari ${DEVICES.length}`}
+          unit={`dari ${devices.length}`}
           icon={Waves}
         />
         <SummaryTile
@@ -217,7 +222,7 @@ export default function PowerQualityPage() {
       />
 
       <PhaseDeviceDetails
-        devices={DEVICES.filter((device) => device.status !== "offline")}
+        devices={devices.filter((device) => device.status !== "offline")}
         locations={panels.map((panel) => panel.location)}
       />
 

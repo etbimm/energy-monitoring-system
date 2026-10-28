@@ -6,6 +6,7 @@ export function formatNumber(value: number, digits = 1): string {
 }
 
 export function formatTime(iso: string): string {
+  if (!iso) return "-";
   return new Date(iso).toLocaleTimeString("id-ID", {
     hour: "2-digit",
     minute: "2-digit",
@@ -15,6 +16,7 @@ export function formatTime(iso: string): string {
 }
 
 export function formatDateTime(iso: string): string {
+  if (!iso) return "-";
   return new Date(iso).toLocaleString("id-ID", {
     day: "2-digit",
     month: "short",

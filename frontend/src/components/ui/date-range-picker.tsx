@@ -29,7 +29,7 @@ export function DateRangePicker({
   const [open, setOpen] = useState(false);
   const [preset, setPreset] = useState<RangePreset>("24h");
 
-  const defaultFrom = isoDate(new Date(today.getTime() - 6 * 86400_000));
+  const defaultFrom = isoDate(new Date(today.getTime() - 86400_000));
   const defaultTo = isoDate(today);
   const [from, setFrom] = useState(defaultFrom);
   const [to, setTo] = useState(defaultTo);

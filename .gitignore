@@ -22,3 +22,10 @@ next-env.d.ts
 # database volume (kalau nanti pakai local docker volume)
 data/
 *.db
+/backups/
+
+# python
+__pycache__/
+.venv/
+.pytest_cache/
+*.pyc

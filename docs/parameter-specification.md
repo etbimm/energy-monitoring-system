@@ -3,7 +3,7 @@
 **Proyek:** Java Wood Pellet — Energy Monitoring System
 **Versi:** 1.0
 **Tanggal:** 21 Oktober 2026
-**Status:** acuan parsing Node-RED + kontrak data frontend & backend
+**Status:** acuan parsing acquisition Python + kontrak data frontend & backend
 
 ---
 
@@ -19,8 +19,8 @@ Dokumen ini adalah **sumber kebenaran tunggal** untuk:
 6. Jebakan teknis parsing yang harus diwaspai saat commissioning
 
 Dokumen terkait:
-- [`../node-red/register-map.md`](../node-red/register-map.md) — tabel register ringkas untuk lapangan
-- [`../node-red/meter-profiles.js`](../node-red/meter-profiles.js) — profil register versi mesin-readable
+- [`../backend/app/acquisition/profiles.py`](../backend/app/acquisition/profiles.py) — profil register runtime
+- [`../node-red/register-map.md`](../node-red/register-map.md) — tabel register ringkas (arsip)
 - [`data-model.md`](./data-model.md) — skema tabel
 - [`architecture.md`](./architecture.md) — alur data end-to-end
 
@@ -133,10 +133,10 @@ sedangkan "tidak tersedia" berarti "tidak bisa diukur".
 
 ---
 
-## 5. Normalisasi di Node-RED
+## 5. Normalisasi di worker akuisisi (pymodbus)
 
-Node-RED **wajib** mengubah register mentah menjadi satuan engineering sebelum
-publish ke MQTT. Nilai mentah tidak boleh keluar dari Node-RED.
+Worker `backend/app/acquisition` **wajib** mengubah register mentah menjadi satuan
+engineering sebelum publish ke MQTT. Nilai mentah tidak boleh keluar dari poller.
 
 ### 5.1 Konversi wajib
 
@@ -151,7 +151,7 @@ Contoh: AMC96 register 6 (uint16) berisi 1186 → publish `power: 118.6` kW (ska
 
 | Jebakan | Detail | Penanganan |
 |---|---|---|
-| **Skala berbeda per model** | PAC3220 & Elite440: float skala 1. AMC96: uint16 skala 10. DMG510: int32 skala 100. EM220: uint32 skala 1000. | Ambil `scale` dari `meter-profiles.js` per model. **Jangan hardcode.** |
+| **Skala berbeda per model** | PAC3220 & Elite440: float skala 1. AMC96: uint16 skala 10. DMG510: int32 skala 100. EM220: uint32 skala 1000. | Ambil `scale` dari `profiles.py` per model. **Jangan hardcode.** |
 | **Float vs integer** | PAC3220 & Elite440 IEEE754 little-endian (2 register). | Decoder terpisah; `parseInt` akan menghasilkan 0 atau angka sampah. |
 | **Register 32-bit terbelah** | kWh & kVARh = 2 register 16-bit, little-endian (low word dulu). | Gabung: `low + high × 65536`. |
 | **Multiplier CT** | Meter menerima CT sekunder 1 A / 5 A. | Set rasio CT di alat. Verifikasi saat commissioning. |
@@ -195,8 +195,8 @@ Kaidah:
 
 - Semua nilai sudah **satuan engineering** (SI), bukan register mentah.
 - Field opsional yang tidak tersedia diisi **`null`**, bukan `0` dan bukan dihilangkan.
-- `power_factor` **tidak** dikirim dari Node-RED — dihitung backend.
-- `energy_apparent` (kVAh) **tidak** dikirim dari Node-RED — dihitung backend.
+- `power_factor` **tidak** dikirim dari poller — dihitung backend.
+- `energy_apparent` (kVAh) **tidak** dikirim dari poller — dihitung backend.
 - Timestamp dalam ISO-8601 UTC.
 
 ---

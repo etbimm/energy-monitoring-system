@@ -1,15 +1,29 @@
+"use client";
+
 import { Activity, PlugZap, Wifi } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { getPanels, getTotals, TOTAL_METERS } from "@/lib/mock-data";
+import { DataState } from "@/components/ui/data-state";
+import { getPanelsForDevices } from "@/lib/device-data";
+import { useEMSData } from "@/lib/use-ems-data";
 import { formatNumber, formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Device } from "@/lib/types";
 
 export default function RealtimePage() {
-  const panels = getPanels();
-  const totals = getTotals();
+  const { devices, summary, loading, error, realtime } = useEMSData();
+  const panels = getPanelsForDevices(devices);
+  const totals = summary ?? {
+    totalPower: 0,
+    totalApparentPower: 0,
+    totalReactivePower: 0,
+    energyToday: 0,
+    online: 0,
+    warning: 0,
+    offline: 0,
+    total: 0,
+  };
 
   return (
     <>
@@ -18,10 +32,11 @@ export default function RealtimePage() {
         description="Nilai terkini setiap power meter"
         action={
           <span className="text-xs text-stone-500">
-            Data dummy - siintegrasi Node-RED
+            {realtime ? "Live via WebSocket" : "WebSocket terputus - polling aktif"}
           </span>
         }
       />
+      <DataState loading={loading} error={error} />
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <SummaryTile
@@ -44,7 +59,7 @@ export default function RealtimePage() {
         />
         <SummaryTile
           label="Total Power Meter"
-          value={String(TOTAL_METERS)}
+          value={String(devices.length)}
           unit="unit"
           icon={Wifi}
         />
@@ -80,18 +95,6 @@ export default function RealtimePage() {
         </Card>
       ))}
 
-      <Card className="mt-4">
-        <CardHeader
-          title="Catatan integrasi"
-          subtitle="Bagian ini akan diisi data live via WebSocket"
-        />
-        <CardContent>
-          <p className="text-sm text-stone-600">
-            Nanti nilai di atas akan di-update otomatis setiap 1-2 detik dari
-            backend melalui WebSocket. Untuk sekarang masih dummy statis.
-          </p>
-        </CardContent>
-      </Card>
     </>
   );
 }

@@ -2,7 +2,7 @@
 
 > Untuk daftar parameter lengkap, matriks kapabilitas per model meter, dan
 > tabel register: [`parameter-specification.md`](./parameter-specification.md).
-> Acuan parsing Node-RED: [`../node-red/register-map.md`](../node-red/register-map.md).
+> Acuan parsing runtime: [`../backend/app/acquisition/profiles.py`](../backend/app/acquisition/profiles.py).
 
 ## Parameter Power Meter
 
@@ -17,7 +17,7 @@ Parameter dibagi 3 lapis (detail & alasan di `parameter-specification.md`):
 > **kVAh dan PF tidak pernah dipoll** — hanya 1 dari 5 model meter yang punya
 > register kVAh, dan definisi register PF berbeda antar model.
 
-Skala register per model ada di [`../node-red/meter-profiles.js`](../node-red/meter-profiles.js).
+Skala register per model ada di [`../backend/app/acquisition/profiles.py`](../backend/app/acquisition/profiles.py).
 Ringkasnya: PAC3220 & Elite440 = IEEE754 float, sisanya integer berskala
 (10 / 100 / 1000 — berbeda per model).
 

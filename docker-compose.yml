@@ -1,0 +1,70 @@
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ems}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ems}
+      POSTGRES_DB: ${POSTGRES_DB:-ems}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ems_pgdata:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ems} -d ${POSTGRES_DB:-ems}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mqtt:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+      - "9001:9001"
+    volumes:
+      - ./mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ems_mosquitto:/mosquitto/data
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      mqtt:
+        condition: service_started
+    ports:
+      - "${BACKEND_PORT:-4000}:4000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ems}:${POSTGRES_PASSWORD:-ems}@db:5432/${POSTGRES_DB:-ems}
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
+      MQTT_USERNAME: ${MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      POLL_INTERVAL: ${POLL_INTERVAL:-5}
+
+  acquisition:
+    build: ./backend
+    restart: unless-stopped
+    command: python -m app.acquisition
+    depends_on:
+      db:
+        condition: service_healthy
+      mqtt:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ems}:${POSTGRES_PASSWORD:-ems}@db:5432/${POSTGRES_DB:-ems}
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
+      MQTT_USERNAME: ${MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      POLL_INTERVAL: ${POLL_INTERVAL:-5}
+      ACQUISITION_MODE: ${ACQUISITION_MODE:-simulator}
+      MODBUS_TIMEOUT: ${MODBUS_TIMEOUT:-2}
+
+volumes:
+  ems_pgdata:
+  ems_mosquitto:
