@@ -162,7 +162,7 @@ export async function getReadings({
 }: {
   from: string;
   to: string;
-  bucket?: "raw" | "1m" | "5m" | "15m" | "1h";
+  bucket?: "raw" | "1m" | "5m" | "15m" | "1h" | "1d";
   device?: string;
 }): Promise<TimeSeriesPoint[]> {
   const params = new URLSearchParams({ from, to, bucket });

@@ -128,7 +128,7 @@ export default function AlarmsPage() {
                   type="button"
                   disabled={pendingId === alarm.id}
                   onClick={() => void acknowledge(alarm.id)}
-                  className="mt-3 rounded-md bg-white/15 px-3 py-1.5 text-xs font-medium hover:bg-white/25 disabled:opacity-50"
+                  className="mt-3 rounded-md border border-amber-700/20 bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-amber-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {pendingId === alarm.id ? "Menyimpan..." : "Acknowledge"}
                 </button>

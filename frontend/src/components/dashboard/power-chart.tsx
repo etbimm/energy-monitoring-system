@@ -23,6 +23,76 @@ const tooltipStyle = {
   boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
 };
 
+function formatAxisTime(value: number): string {
+  return new Date(value).toLocaleTimeString("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).replace(":", ".");
+}
+
+function XAxisTick({
+  x = 0,
+  y = 0,
+  payload,
+  mode,
+  spansMultipleDays,
+}: {
+  x?: number;
+  y?: number;
+  payload?: { value?: number };
+  mode: "time" | "date" | "full-day";
+  spansMultipleDays: boolean;
+}) {
+  const timestamp = Number(payload?.value);
+  if (!Number.isFinite(timestamp)) return null;
+
+  const date = new Date(timestamp);
+  const dateLabel = date.toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "2-digit",
+  });
+
+  if (mode === "date") {
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <text textAnchor="middle" fill="#78716c" fontSize={11} dy={14}>
+          {dateLabel}
+        </text>
+      </g>
+    );
+  }
+
+  if (mode === "full-day") {
+    const timeLabel =
+      date.getHours() === 23 && date.getMinutes() === 59
+        ? "23:59"
+        : formatAxisTime(timestamp);
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <text textAnchor="middle" fill="#78716c" fontSize={11} dy={14}>
+          {timeLabel}
+        </text>
+      </g>
+    );
+  }
+
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text textAnchor="middle" fill="#78716c" fontSize={10}>
+        {spansMultipleDays ? (
+          <>
+            <tspan x={0} dy={11}>{dateLabel}</tspan>
+            <tspan x={0} dy={13}>{formatAxisTime(timestamp)}</tspan>
+          </>
+        ) : (
+          <tspan x={0} dy={14}>{formatAxisTime(timestamp)}</tspan>
+        )}
+      </text>
+    </g>
+  );
+}
+
 /** Kunci data yang bisa ditampilkan pada chart */
 export type ChartKey =
   | "power"
@@ -57,14 +127,49 @@ export const POWER_QUALITY_SERIES: ChartSeries[] = [
 export function PowerChart({
   data,
   series,
+  xAxisMode = "time",
 }: {
   data: TimeSeriesPoint[];
   series: ChartSeries[];
+  xAxisMode?: "time" | "date" | "full-day";
 }) {
+  const chartData = data
+    .map((point) => ({
+      ...point,
+      timestampValue: new Date(point.timestamp).getTime(),
+    }))
+    .filter((point) => Number.isFinite(point.timestampValue))
+    .sort((a, b) => a.timestampValue - b.timestampValue)
+    .filter(
+      (point, index, points) =>
+        index === 0 || point.timestampValue !== points[index - 1].timestampValue,
+    );
+  const firstPointDate = new Date(chartData[0]?.timestampValue ?? Date.now());
+  firstPointDate.setHours(0, 0, 0, 0);
+  const dayStart = firstPointDate.getTime();
+  const dayEnd = new Date(dayStart);
+  dayEnd.setHours(23, 59, 59, 999);
+  const dayTicks = [0, 6, 12, 18].map(
+    (hour) => dayStart + hour * 60 * 60 * 1000,
+  );
+  dayTicks.push(dayEnd.getTime());
+  const firstTimestamp = chartData[0]?.timestampValue;
+  const lastTimestamp = chartData[chartData.length - 1]?.timestampValue;
+  const spansMultipleDays =
+    firstTimestamp !== undefined &&
+    lastTimestamp !== undefined &&
+    new Date(firstTimestamp).toDateString() !== new Date(lastTimestamp).toDateString();
+  const timeDomain =
+    firstTimestamp === undefined || lastTimestamp === undefined
+      ? [0, 1]
+      : firstTimestamp === lastTimestamp
+        ? [firstTimestamp - 30 * 60 * 1000, lastTimestamp + 30 * 60 * 1000]
+        : [firstTimestamp, lastTimestamp];
+
   return (
     <div className="h-[300px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+        <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <defs>
             <linearGradient id="powerFill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#8d1c1c" stopOpacity={0.28} />
@@ -77,12 +182,25 @@ export function PowerChart({
           </defs>
           <CartesianGrid stroke="#e7e5e4" strokeDasharray="3 3" vertical={false} />
           <XAxis
-            dataKey="label"
+            dataKey="timestampValue"
+            type="number"
+            scale="time"
+            domain={
+              xAxisMode === "full-day"
+                ? [dayStart, dayEnd.getTime()]
+                : timeDomain
+            }
+            ticks={xAxisMode === "full-day" ? dayTicks : undefined}
+            tickCount={6}
+            tick={
+              <XAxisTick
+                mode={xAxisMode}
+                spansMultipleDays={spansMultipleDays}
+              />
+            }
             stroke="#78716c"
-            fontSize={11}
             tickLine={false}
             axisLine={false}
-            interval={2}
           />
           <YAxis
             stroke="#78716c"
@@ -94,6 +212,29 @@ export function PowerChart({
           <Tooltip
             contentStyle={tooltipStyle}
             labelStyle={{ color: "#57534e" }}
+            labelFormatter={(value) => {
+              const timestamp = Number(value);
+              if (!Number.isFinite(timestamp)) return String(value);
+
+              const date = new Date(timestamp);
+              if (xAxisMode === "date") {
+                return date.toLocaleDateString("id-ID", {
+                  day: "2-digit",
+                  month: "long",
+                  year: "numeric",
+                });
+              }
+
+              const time = formatAxisTime(timestamp);
+              if (xAxisMode === "full-day" || !spansMultipleDays) return time;
+
+              const dateLabel = date.toLocaleDateString("id-ID", {
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+              });
+              return `${dateLabel} ${time}`;
+            }}
             formatter={(value: number, name: string) => {
               const s = series.find((x) => x.key === name);
               return [

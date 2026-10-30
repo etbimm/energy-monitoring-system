@@ -174,9 +174,10 @@ def _bucket_interval(bucket: str) -> str | None:
         "5m": "5 minutes",
         "15m": "15 minutes",
         "1h": "1 hour",
+        "1d": "1 day",
     }
     if bucket not in mapping:
-        raise ValueError("bucket harus salah satu dari: raw, 1m, 5m, 15m, 1h")
+        raise ValueError("bucket harus salah satu dari: raw, 1m, 5m, 15m, 1h, 1d")
     return mapping[bucket]
 
 

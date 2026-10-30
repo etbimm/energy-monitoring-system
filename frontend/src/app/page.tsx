@@ -140,7 +140,11 @@ export default function OverviewPage() {
             subtitle={`Daya (kW) dan energy kumulatif (kWh) - ${profileIsDemo ? "profil simulasi" : "meter incoming"}`}
           />
           <CardContent>
-            <PowerChart data={profile} series={OVERVIEW_SERIES} />
+            <PowerChart
+              data={profile}
+              series={OVERVIEW_SERIES}
+              xAxisMode="full-day"
+            />
           </CardContent>
         </Card>
 

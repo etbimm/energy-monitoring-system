@@ -16,6 +16,7 @@ def test_simulated_online_meters_have_thd_readings():
             continue
 
         assert reading is not None
+        assert reading["energy_active"] > NOMINAL[device_code]["energy"]
         assert reading["thd_current"] is not None
         if model == "WEIDMULLER EM220":
             assert reading["thd_voltage"] is None

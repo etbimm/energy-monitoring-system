@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.acquisition.normalize import to_telemetry
 
@@ -57,7 +57,11 @@ def simulate_decoded(device_code: str, capabilities: dict) -> dict[str, float] |
     reactive = power * math.tan(math.acos(min(max(pf, 0.01), 0.999))) if 0 < pf < 1 else 0.0
     voltage = 400 + (random.random() - 0.5) * 4
     current = apparent * 1000 / (math.sqrt(3) * voltage) if voltage else 0.0
-    energy = spec["energy"] + power * (now.hour + now.minute / 60) / 24
+    history_start = datetime(
+        now.year, now.month, now.day, tzinfo=timezone.utc
+    ) - timedelta(days=29)
+    elapsed_days = (now - history_start).total_seconds() / 86400
+    energy = spec["energy"] + spec["power"] * 0.59 * elapsed_days
 
     decoded = {
         "voltage_l1": voltage + 0.4,

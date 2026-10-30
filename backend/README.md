@@ -41,7 +41,7 @@ WS   /ws
 POST /internal/ingest          # debug tanpa MQTT
 ```
 
-`bucket`: `raw` | `1m` | `5m` | `15m` | `1h`
+`bucket`: `raw` | `1m` | `5m` | `15m` | `1h` | `1d`
 
 Total daya/energi hanya menjumlahkan meter `role=incoming`.
 
@@ -65,6 +65,20 @@ ACQUISITION_MODE=modbus docker compose up --build
 ```
 
 Sesuaikan `modbus_host` / `modbus_address` di tabel `devices`.
+
+Database demo diisi histori simulasi selama 30 hari dengan interval 15 menit,
+termasuk pembacaan per fasa. Skrip ini berjalan otomatis saat volume database
+pertama kali dibuat. Untuk mengisi atau memperbarui histori pada database yang
+sudah ada, jalankan dari root repository:
+
+```powershell
+docker compose exec db psql -U ems -d ems -v ON_ERROR_STOP=1 -f /docker-entrypoint-initdb.d/03-seed-history.sql
+docker compose up --build -d acquisition
+```
+
+Skrip tersebut hanya untuk demo/pengembangan; jangan jalankan pada database
+produksi atau database yang menyimpan data meter sungguhan. Ganti `ems` pada
+perintah jika nama user/database di `.env` berbeda.
 
 ## Menjalankan lokal tanpa Docker API
 

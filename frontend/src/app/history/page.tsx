@@ -26,6 +26,12 @@ function dateParam(value: string, endOfDay = false): string {
   return new Date(`${value}T${endOfDay ? "23:59:59" : "00:00:00"}`).toISOString();
 }
 
+function rangeDayCount(from: string, to: string): number {
+  const start = Date.parse(`${from}T00:00:00Z`);
+  const end = Date.parse(`${to}T00:00:00Z`);
+  return Math.floor((end - start) / 86_400_000) + 1;
+}
+
 export default function HistoryPage() {
   const now = new Date();
   const [range, setRange] = useState({
@@ -56,14 +62,11 @@ export default function HistoryPage() {
     }
 
     setLoading(true);
-    const days =
-      (new Date(`${range.to}T00:00:00`).getTime() -
-        new Date(`${range.from}T00:00:00`).getTime()) /
-      86_400_000;
+    const days = rangeDayCount(range.from, range.to);
     getReadings({
       from: dateParam(range.from),
       to: dateParam(range.to, true),
-      bucket: days <= 2 ? "5m" : "1h",
+      bucket: days <= 2 ? "5m" : "1d",
     })
       .then((points) => {
         if (active) {
@@ -112,6 +115,7 @@ export default function HistoryPage() {
     (maximum, point) => Math.max(maximum, point.reactivePower),
     0,
   );
+  const isDailyRange = rangeDayCount(range.from, range.to) > 2;
   const avg = data.length
     ? data.reduce((total, point) => total + point.power, 0) / data.length
     : 0;
@@ -158,7 +162,11 @@ export default function HistoryPage() {
           action={<DateRangePicker onChange={setRange} />}
         />
         <CardContent>
-          <PowerChart data={data} series={POWER_QUALITY_SERIES} />
+          <PowerChart
+            data={data}
+            series={POWER_QUALITY_SERIES}
+            xAxisMode={isDailyRange ? "date" : "time"}
+          />
         </CardContent>
       </Card>
 
