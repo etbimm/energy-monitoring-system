@@ -74,4 +74,5 @@ menampilkan fixture simulasi realistis dan menandainya sebagai **Mode demo**.
 - [Arsitektur](docs/architecture.md)
 - [Data Model](docs/data-model.md)
 - [Spesifikasi Parameter](docs/parameter-specification.md)
+- [Dokumen UAT](docs/UAT.md)
 - [Backend](backend/README.md)
