@@ -93,6 +93,33 @@ python -m app.acquisition
 
 Database dan Mosquitto tetap lewat `docker compose up db mqtt`.
 
+## Error log dan notifikasi Telegram
+
+Error backend, database, MQTT, akuisisi/Modbus, dan koneksi API dari frontend
+dicatat ke log container. Error baru mengirim satu pesan Telegram, lalu satu
+pesan pemulihan setelah sistem mendeteksi koneksi normal kembali. Pengiriman
+Telegram bersifat opsional; tanpa kredensial, pencatatan log tetap aktif.
+
+1. Buat bot melalui BotFather, kirim `/start` ke bot, lalu dapatkan chat ID.
+2. Simpan konfigurasi berikut di `.env` pada root project. Jangan commit token:
+
+   ```dotenv
+   TELEGRAM_BOT_TOKEN=token-dari-botfather
+   TELEGRAM_CHAT_ID=id-chat-telegram
+   ```
+
+3. Terapkan konfigurasi dengan menjalankan `docker compose up --build -d`.
+4. Lihat log sewaktu-waktu dengan:
+
+   ```powershell
+   docker compose logs -f backend acquisition
+   ```
+
+Peringatan koneksi dari browser dikirim best-effort. Jika backend sepenuhnya
+tidak dapat dijangkau, browser tidak bisa meneruskan error ke Telegram; error
+tersebut tetap terlihat di console browser. Kegagalan proses/container yang
+berhenti total juga memerlukan pemantau eksternal untuk memberi notifikasi.
+
 ## Tes decoder
 
 ```bash

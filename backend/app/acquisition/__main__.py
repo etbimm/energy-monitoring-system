@@ -13,6 +13,7 @@ from app.acquisition.poller import poll_device
 from app.acquisition.profiles import get_profile
 from app.acquisition.simulator import simulate_telemetry
 from app.config import get_settings
+from app.services.error_reporting import report_error, resolve_error
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("ems.acquisition")
@@ -50,8 +51,13 @@ async def run() -> None:
     while True:
         try:
             devices = await load_devices(settings.database_url)
-        except Exception:
-            log.exception("Gagal load devices dari database")
+            await resolve_error("database:acquisition", "Database kembali dapat diakses oleh acquisition.")
+        except Exception as exc:
+            await report_error(
+                "database:acquisition",
+                "Acquisition gagal memuat daftar power meter dari database.",
+                exc,
+            )
             await asyncio.sleep(5)
             continue
 
@@ -62,14 +68,24 @@ async def run() -> None:
                 username=settings.mqtt_username,
                 password=settings.mqtt_password,
             ) as mqtt:
+                await resolve_error("mqtt:acquisition", "Koneksi MQTT acquisition kembali normal.")
                 while True:
                     try:
                         devices = await load_devices(settings.database_url)
-                    except Exception:
-                        log.exception("Gagal refresh devices")
+                        await resolve_error(
+                            "database:acquisition",
+                            "Database kembali dapat diakses oleh acquisition.",
+                        )
+                    except Exception as exc:
+                        await report_error(
+                            "database:acquisition",
+                            "Acquisition gagal memperbarui daftar power meter.",
+                            exc,
+                        )
 
                     for device in devices:
                         code = device["device_code"]
+                        error_key = f"acquisition:meter:{code}"
                         caps = device["capabilities"] or {}
                         if isinstance(caps, str):
                             caps = json.loads(caps)
@@ -96,15 +112,38 @@ async def run() -> None:
                                 )
                             if payload is None:
                                 await publish(mqtt, topic_status, {"device_code": code, "status": "offline"})
+                                if settings.acquisition_mode == "modbus":
+                                    await report_error(
+                                        error_key,
+                                        f"Power meter {code} tidak mengirim telemetry.",
+                                    )
                                 continue
                             await publish(mqtt, topic_tele, payload)
                             await publish(mqtt, topic_status, {"device_code": code, "status": "online"})
+                            if settings.acquisition_mode == "modbus":
+                                await resolve_error(
+                                    error_key,
+                                    f"Power meter {code} kembali mengirim telemetry.",
+                                )
                         except Exception as exc:
-                            log.warning("Poll gagal %s: %s", code, exc)
-                            await publish(mqtt, topic_status, {"device_code": code, "status": "offline", "error": str(exc)})
+                            await publish(
+                                mqtt,
+                                topic_status,
+                                {
+                                    "device_code": code,
+                                    "status": "offline",
+                                    "error": type(exc).__name__,
+                                },
+                            )
+                            await report_error(
+                                error_key,
+                                f"Gagal membaca power meter {code}.",
+                                exc,
+                            )
                     await asyncio.sleep(settings.poll_interval)
-        except aiomqtt.MqttError:
-            log.exception("MQTT terputus, reconnect 5 detik")
+        except aiomqtt.MqttError as exc:
+            await report_error("mqtt:acquisition", "Koneksi MQTT acquisition terputus.", exc)
+            log.warning("MQTT terputus, reconnect 5 detik")
             await asyncio.sleep(5)
 
 

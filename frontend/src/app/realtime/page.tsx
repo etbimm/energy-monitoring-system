@@ -208,48 +208,32 @@ function SummaryTile({
   icon: typeof Activity;
   tone?: "default" | "danger";
 }) {
-  const dark = tone === "danger";
+  const highlighted = tone === "danger";
   return (
-    <Card
-      className={
-        dark
-          ? "min-w-0 border-brand-800 bg-brand-800 p-3 text-white sm:p-5"
-          : "min-w-0 border-stone-200 bg-white p-3 text-stone-900 sm:p-5"
-      }
-    >
+    <Card className="min-w-0 border-stone-200 bg-white p-3 text-stone-900 sm:p-5">
       <div className="flex items-start justify-between">
         <div>
-          <p
-            className={
-              dark
-                ? "text-xs font-medium uppercase tracking-wider text-brand-200"
-                : "text-xs font-medium uppercase tracking-wider text-stone-500"
-            }
-          >
+          <p className="text-xs font-medium uppercase tracking-wider text-stone-500">
             {label}
           </p>
-          <p className="mt-2 text-xl font-semibold tabular-nums sm:text-2xl">
+          <p
+            className={`mt-2 text-xl font-semibold tabular-nums sm:text-2xl ${
+              highlighted ? "text-brand-800" : "text-stone-900"
+            }`}
+          >
             {value}
             {unit ? (
-              <span
-                className={
-                  dark
-                    ? "ml-1 text-sm font-normal text-brand-200"
-                    : "ml-1 text-sm font-normal text-stone-500"
-                }
-              >
+              <span className="ml-1 text-sm font-normal text-stone-500">
                 {unit}
               </span>
             ) : null}
           </p>
         </div>
         <div
-          className={
-            dark ? "rounded-lg bg-white/15 p-2" : "rounded-lg bg-brand-50 p-2"
-          }
+          className={`rounded-lg p-2 ${highlighted ? "bg-brand-100" : "bg-brand-50"}`}
         >
           <Icon
-            className={dark ? "h-4 w-4 text-white" : "h-4 w-4 text-brand-700"}
+            className={`h-4 w-4 ${highlighted ? "text-brand-900" : "text-brand-700"}`}
             aria-hidden
           />
         </div>

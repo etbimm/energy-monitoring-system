@@ -116,3 +116,8 @@ class TelemetryIn(BaseModel):
     unbalance_voltage: float | None = None
     unbalance_current: float | None = None
     phases: dict | None = None
+
+
+class ClientErrorIn(BaseModel):
+    key: str = Field(min_length=1, max_length=120, pattern=r"^[a-zA-Z0-9._-]+$")
+    summary: str = Field(min_length=1, max_length=300)

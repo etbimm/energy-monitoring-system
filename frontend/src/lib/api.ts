@@ -84,9 +84,49 @@ const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").rep
   /\/$/,
   "",
 );
+const activeClientErrors = new Set<string>();
+
+function clientErrorKey(path: string, method: string): string {
+  const route = path.split("?")[0].replace(/[^a-zA-Z0-9._-]/g, "-");
+  return `network-${method.toLowerCase()}-${route}`.slice(0, 120);
+}
+
+async function reportClientNetworkError(key: string, path: string): Promise<void> {
+  if (activeClientErrors.has(key)) return;
+  activeClientErrors.add(key);
+  try {
+    const response = await fetch(`${API_URL}/api/client-errors`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        key,
+        summary: `Tidak dapat menghubungi ${path.split("?")[0]}`,
+      }),
+      cache: "no-store",
+    });
+    if (!response.ok) activeClientErrors.delete(key);
+  } catch {
+    console.error(`EMS API tidak dapat dihubungi: ${path.split("?")[0]}`);
+  }
+}
+
+async function resolveClientNetworkError(key: string): Promise<void> {
+  if (!activeClientErrors.has(key)) return;
+  try {
+    const response = await fetch(
+      `${API_URL}/api/client-errors/${encodeURIComponent(key)}/resolve`,
+      { method: "POST", cache: "no-store" },
+    );
+    if (response.ok) activeClientErrors.delete(key);
+  } catch {
+    // Keep the incident active so the next successful API request can resolve it.
+  }
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
+  const method = init?.method ?? "GET";
+  const clientError = clientErrorKey(path, method);
   try {
     response = await fetch(`${API_URL}${path}`, {
       ...init,
@@ -94,10 +134,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       cache: "no-store",
     });
   } catch (error) {
+    void reportClientNetworkError(clientError, path);
     throw new Error(
       `Backend tidak dapat dihubungi: ${error instanceof Error ? error.message : "kesalahan jaringan"}`,
     );
   }
+  void resolveClientNetworkError(clientError);
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);

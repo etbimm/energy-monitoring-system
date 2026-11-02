@@ -31,30 +31,30 @@ export function MobileNav() {
 
   return (
     <>
-      <header className="sticky top-0 z-40 flex items-center gap-3 border-b border-stone-200 bg-white px-4 py-3 md:hidden">
+      <header className="sticky top-0 z-40 flex items-center gap-2.5 border-b border-brand-900 bg-brand-800 px-3 py-3 text-white md:hidden">
         <button
           type="button"
           aria-label="Buka navigasi"
           aria-expanded={isOpen}
           aria-controls="mobile-sidebar"
           onClick={() => setIsOpen(true)}
-          className="rounded-md p-2 text-stone-700 hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700"
+          className="rounded-md p-2 text-white/85 hover:bg-brand-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e2bd43]"
         >
           <Menu className="h-5 w-5" aria-hidden />
         </button>
         <img
           src="/Logo%20SAMKO.jpeg"
           alt="Logo Java Wood Pellet"
-          width={32}
-          height={32}
-          className="h-8 w-8 shrink-0 rounded"
+          width={40}
+          height={40}
+          className="h-10 w-10 shrink-0 rounded-md"
         />
         <div>
-          <p className="text-sm font-semibold leading-tight text-stone-900">
-            Java Wood Pellet
-          </p>
-          <p className="text-[11px] leading-tight text-stone-500">
+          <p className="text-sm font-semibold leading-tight text-white">
             Energy Monitoring
+          </p>
+          <p className="text-[11px] leading-tight text-[#e2bd43]">
+            Java Wood Pellet
           </p>
         </div>
       </header>

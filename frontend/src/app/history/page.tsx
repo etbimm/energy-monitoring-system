@@ -11,7 +11,7 @@ import {
   DateRangePicker,
   type RangePreset,
 } from "@/components/ui/date-range-picker";
-import { getReadings } from "@/lib/api";
+import { getReadings, getRealtimeUrl } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { generateProfileForRange } from "@/lib/mock-data";
 import { POWER_QUALITY_SERIES } from "@/components/dashboard/power-chart";
@@ -63,12 +63,24 @@ export default function HistoryPage() {
 
     setLoading(true);
     const days = rangeDayCount(range.from, range.to);
-    getReadings({
-      from: dateParam(range.from),
-      to: dateParam(range.to, true),
-      bucket: days <= 2 ? "5m" : "1d",
-    })
-      .then((points) => {
+    let inFlight = false;
+    let refreshPending = false;
+    let lastRealtimeRefresh = 0;
+    let retry: number | undefined;
+    let socket: WebSocket | undefined;
+
+    const load = async () => {
+      if (inFlight) {
+        refreshPending = true;
+        return;
+      }
+      inFlight = true;
+      try {
+        const points = await getReadings({
+          from: dateParam(range.from),
+          to: dateParam(range.to, true),
+          bucket: days <= 2 ? "5m" : "1d",
+        });
         if (active) {
           if (points.length === 0) {
             setData(generateProfileForRange(range.from, range.to));
@@ -80,20 +92,54 @@ export default function HistoryPage() {
             setError(null);
           }
         }
-      })
-      .catch((cause: unknown) => {
+      } catch (cause: unknown) {
         if (active) {
           setData(generateProfileForRange(range.from, range.to));
           setIsDemo(true);
           setError(cause instanceof Error ? cause.message : "Gagal memuat histori.");
         }
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+      } finally {
+        inFlight = false;
+        if (active) {
+          setLoading(false);
+          if (refreshPending) {
+            refreshPending = false;
+            void load();
+          }
+        }
+      }
+    };
+
+    const connect = () => {
+      if (!active) return;
+      socket = new WebSocket(getRealtimeUrl());
+      socket.onclose = () => {
+        if (active) retry = window.setTimeout(connect, 3_000);
+      };
+      socket.onerror = () => socket?.close();
+      socket.onmessage = (event) => {
+        try {
+          const message: { type?: string } = JSON.parse(event.data);
+          if (message.type !== "telemetry" && message.type !== "snapshot") return;
+          const now = Date.now();
+          if (now - lastRealtimeRefresh < 1_000) return;
+          lastRealtimeRefresh = now;
+          void load();
+        } catch {
+          setError("Backend mengirim pesan realtime yang tidak valid.");
+        }
+      };
+    };
+
+    void load();
+    const poll = window.setInterval(() => void load(), 15_000);
+    connect();
 
     return () => {
       active = false;
+      if (retry !== undefined) window.clearTimeout(retry);
+      window.clearInterval(poll);
+      socket?.close();
     };
   }, [range.from, range.to]);
 
@@ -275,11 +321,11 @@ function SummaryCard({
   unit: string;
 }) {
   return (
-    <Card className="min-w-0 border-brand-800 bg-brand-800 p-3 text-white sm:p-5">
-      <p className="text-xs font-medium uppercase tracking-wider text-brand-200">{label}</p>
-      <p className="mt-2 text-xl font-semibold tabular-nums sm:text-2xl">
+    <Card className="min-w-0 border-stone-200 bg-white p-3 text-stone-900 sm:p-5">
+      <p className="text-xs font-medium uppercase tracking-wider text-stone-500">{label}</p>
+      <p className="mt-2 text-xl font-semibold tabular-nums text-brand-800 sm:text-2xl">
         {value}
-        {unit ? <span className="ml-1 text-sm font-normal text-brand-200">{unit}</span> : null}
+        {unit ? <span className="ml-1 text-sm font-normal text-stone-500">{unit}</span> : null}
       </p>
     </Card>
   );

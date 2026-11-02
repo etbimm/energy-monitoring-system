@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     mqtt_password: str | None = None
     mqtt_topic_prefix: str = "ems"
 
+    telegram_bot_token: str | None = None
+    telegram_chat_id: str | None = None
+
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     poll_interval: int = 5
