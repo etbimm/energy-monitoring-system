@@ -11,7 +11,7 @@ import { ALARMS } from "@/lib/mock-data";
 import type { Alarm } from "@/lib/types";
 
 const severityStyles = {
-  critical: "border-brand-900 bg-brand-900 text-white",
+  critical: "border-brand-800 bg-brand-800 text-white",
   warning: "border-amber-300 bg-amber-50 text-amber-900",
   info: "border-stone-200 bg-stone-50 text-stone-700",
 };

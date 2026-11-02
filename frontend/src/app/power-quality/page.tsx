@@ -244,7 +244,7 @@ function SummaryTile({
     <Card
       className={
         dark
-          ? "min-w-0 border-brand-900 bg-brand-900 p-3 text-white sm:p-5"
+          ? "min-w-0 border-brand-800 bg-brand-800 p-3 text-white sm:p-5"
           : "min-w-0 border-stone-200 bg-white p-3 text-stone-900 sm:p-5"
       }
     >

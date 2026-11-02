@@ -134,7 +134,7 @@ function MeterCard({ device: d }: { device: Device }) {
       </div>
 
       {d.status === "offline" ? (
-        <div className="mt-4 rounded-lg bg-brand-900 px-3 py-2.5">
+        <div className="mt-4 rounded-lg bg-brand-800 px-3 py-2.5">
           <p className="text-xs font-medium text-white">
             Device offline - tidak ada data
           </p>
@@ -213,7 +213,7 @@ function SummaryTile({
     <Card
       className={
         dark
-          ? "min-w-0 border-brand-900 bg-brand-900 p-3 text-white sm:p-5"
+          ? "min-w-0 border-brand-800 bg-brand-800 p-3 text-white sm:p-5"
           : "min-w-0 border-stone-200 bg-white p-3 text-stone-900 sm:p-5"
       }
     >

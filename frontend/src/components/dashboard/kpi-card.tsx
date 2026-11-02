@@ -20,9 +20,7 @@ export function KpiCard({
   // accent & danger memakai panel maroon gelap -> font putih
   const dark = tone === "accent" || tone === "danger";
   const toneClass = dark
-    ? tone === "danger"
-      ? "bg-brand-900 border-brand-900 text-white"
-      : "bg-brand-800 border-brand-800 text-white"
+    ? "bg-brand-800 border-brand-800 text-white"
     : "border-stone-200 bg-white text-stone-900";
 
   return (
