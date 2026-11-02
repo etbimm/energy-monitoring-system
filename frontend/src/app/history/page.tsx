@@ -140,7 +140,18 @@ export default function HistoryPage() {
   );
 
   function exportCsv() {
-    const content = csv.map((row) => row.join(",")).join("\r\n");
+    const content = `\uFEFF${csv
+      .map((row) =>
+        row
+          .map((value) => {
+            const cell = String(value);
+            return /[;"\r\n]/.test(cell)
+              ? `"${cell.replaceAll('"', '""')}"`
+              : cell;
+          })
+          .join(";"),
+      )
+      .join("\r\n")}`;
     const url = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a");
     link.href = url;
