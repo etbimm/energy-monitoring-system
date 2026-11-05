@@ -29,11 +29,17 @@ export default function RootLayout({
       >
         <div className="flex min-h-screen flex-col md:flex-row">
           <Sidebar />
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-h-screen min-w-0 flex-1 flex-col">
             <MobileNav />
             <main className="flex-1 overflow-x-hidden px-4 py-5 sm:px-6 md:py-6 lg:px-8">
               <div className="mx-auto max-w-7xl">{children}</div>
             </main>
+            <footer className="mx-4 mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-6 py-4 text-xs text-slate-400 shadow-sm sm:mx-6 lg:mx-8">
+              <p>
+                Copyright © 2026 <span className="font-semibold text-amber-500">EMS - JWP.</span> All rights reserved.
+              </p>
+              <span>EMS</span>
+            </footer>
           </div>
         </div>
       </body>

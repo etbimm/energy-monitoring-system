@@ -53,7 +53,7 @@ export function MobileNav() {
           <p className="text-sm font-semibold leading-tight text-white">
             Energy Monitoring
           </p>
-          <p className="text-[11px] leading-tight text-[#e2bd43]">
+          <p className="text-xs leading-tight text-[#e2bd43]">
             Java Wood Pellet
           </p>
         </div>
@@ -85,7 +85,7 @@ export function MobileNav() {
                   <p className="text-sm font-semibold leading-tight text-white">
                     Energy Monitoring
                   </p>
-                  <p className="text-[11px] leading-tight text-[#e2bd43]">
+                  <p className="text-xs leading-tight text-[#e2bd43]">
                     Java Wood Pellet
                   </p>
                 </div>

@@ -1,0 +1,162 @@
+Table "devices" {
+  Note: 'Master data perangkat. Setiap perangkat dapat memiliki banyak pembacaan dan alarm.'
+  "id" int4 [pk, not null, increment]
+  "device_code" text [unique, not null]
+  "name" text [not null]
+  "location" text
+  "brand" text
+  "model" text [not null]
+  "role" text [not null, check: `role = ANY (ARRAY['incoming'::text, 'outcoming'::text, 'distribution'::text])`]
+  "modbus_host" text
+  "modbus_port" int4 [not null, default: 502]
+  "modbus_address" int4
+  "transport" text [check: `transport = ANY (ARRAY['rs485'::text, 'ethernet'::text])`]
+  "capabilities" jsonb [not null, default: `{}`]
+  "rated_power_kw" float8
+  "is_active" bool [not null, default: true]
+  "last_seen_at" timestamptz
+  "created_at" timestamptz [not null, default: `now()`]
+}
+
+Table "readings" {
+  Note: 'Pembacaan agregat per perangkat dan waktu. Hypertable TimescaleDB dengan partisi waktu 1 hari.'
+  "time" timestamptz [not null]
+  "device_id" int4 [not null]
+  "voltage" float8
+  "current" float8
+  "power" float8
+  "apparent_power" float8
+  "reactive_power" float8
+  "energy_active" float8
+  "energy_reactive" float8
+  "frequency" float8
+  "power_factor" float8
+  "energy_apparent" float8
+  "thd_current" float8
+  "thd_voltage" float8
+  "unbalance_voltage" float8
+  "unbalance_current" float8
+
+  Indexes {
+    (time, device_id) [pk, type: btree, name: "readings_pkey"]
+    (device_id, time) [type: btree, name: "idx_readings_device_time"]
+    time [type: btree, name: "readings_time_idx"]
+  }
+}
+
+Table "phase_readings" {
+  Note: 'Pembacaan per fase (L1/L2/L3) per perangkat dan waktu. Hypertable TimescaleDB dengan partisi waktu 1 hari.'
+  "time" timestamptz [not null]
+  "device_id" int4 [not null]
+  "phase" text [not null, check: `phase = ANY (ARRAY['L1'::text, 'L2'::text, 'L3'::text])`]
+  "voltage" float8
+  "current" float8
+  "power" float8
+  "apparent_power" float8
+  "reactive_power" float8
+  "power_factor" float8
+  "thd_current" float8
+  "thd_voltage" float8
+
+  Indexes {
+    (time, device_id, phase) [pk, type: btree, name: "phase_readings_pkey"]
+    (device_id, time) [type: btree, name: "idx_phase_readings_device_time"]
+    time [type: btree, name: "phase_readings_time_idx"]
+  }
+}
+
+Table "alarms" {
+  Note: 'Alarm perangkat. device_id nullable untuk alarm sistem yang tidak terkait perangkat tertentu.'
+  "id" int4 [pk, not null, increment]
+  "device_id" int4
+  "alarm_type" text [not null]
+  "severity" text [not null, check: `severity = ANY (ARRAY['critical'::text, 'warning'::text, 'info'::text])`]
+  "message" text [not null]
+  "acknowledged" bool [not null, default: false]
+  "acknowledged_at" timestamptz
+  "triggered_at" timestamptz [not null, default: `now()`]
+  "cleared_at" timestamptz
+
+  Indexes {
+    (device_id, alarm_type) [type: btree, name: "idx_alarms_open"]
+    triggered_at [type: btree, name: "idx_alarms_triggered"]
+  }
+}
+
+Ref "alarms_device_id_fkey":"devices"."id" ?<? "alarms"."device_id"
+
+Ref "phase_readings_device_id_fkey":"devices"."id" <? "phase_readings"."device_id"
+
+Ref "readings_device_id_fkey":"devices"."id" <? "readings"."device_id"
+
+// Continuous aggregates / materialized views yang didefinisikan di database/init/01-schema.sql.
+// Ditampilkan agar ERD mencakup alur data analitik; objek ini bukan tabel dasar.
+Table "readings_1min" {
+  "device_id" int4 [not null]
+  "bucket" timestamptz [not null]
+  "voltage" float8
+  "current" float8
+  "power" float8
+  "apparent_power" float8
+  "reactive_power" float8
+  "frequency" float8
+  "power_factor" float8
+  "thd_current" float8
+  "thd_voltage" float8
+  "energy_active" float8
+  "energy_reactive" float8
+  "energy_apparent" float8
+
+  Note: 'Continuous aggregate 1 menit dari readings; grain (device_id, bucket), bucket = time_bucket(1 minute, time). Bukan tabel dasar dan tidak mendeklarasikan PK/FK tersendiri.'
+}
+
+Table "readings_15min" {
+  "device_id" int4 [not null]
+  "bucket" timestamptz [not null]
+  "voltage" float8
+  "current" float8
+  "power" float8
+  "apparent_power" float8
+  "reactive_power" float8
+  "frequency" float8
+  "power_factor" float8
+  "energy_active" float8
+  "energy_reactive" float8
+  "energy_apparent" float8
+
+  Note: 'Continuous aggregate 15 menit dari readings; grain (device_id, bucket), bucket = time_bucket(15 minutes, time). Bukan tabel dasar dan tidak mendeklarasikan PK/FK tersendiri.'
+}
+
+Table "daily_energy" {
+  "device_id" int4 [not null]
+  "day" timestamptz [not null]
+  "energy_kwh" float8
+  "energy_kvarh" float8
+  "peak_power" float8
+  "avg_pf" float8
+
+  Note: 'Continuous aggregate harian dari readings; grain (device_id, day). Energi dihitung dari selisih nilai kumulatif; peak_power = MAX(power). Bukan tabel dasar dan tidak mendeklarasikan PK/FK tersendiri.'
+}
+
+// Dep adalah sintaks resmi DBML untuk lineage/alur pembentukan data.
+// Berbeda dari Ref, Dep tidak menyatakan foreign key.
+Dep readings_to_1min {
+  readings -> readings_1min
+  note: 'Continuous aggregate 1 menit; AVG untuk metrik listrik dan last() untuk energi kumulatif.'
+  materialized: 'TimescaleDB continuous aggregate'
+  query: '''time_bucket('1 minute', time), GROUP BY device_id, bucket'''
+}
+
+Dep readings_to_15min {
+  readings -> readings_15min
+  note: 'Continuous aggregate 15 menit; AVG untuk metrik listrik dan last() untuk energi kumulatif.'
+  materialized: 'TimescaleDB continuous aggregate'
+  query: '''time_bucket('15 minutes', time), GROUP BY device_id, bucket'''
+}
+
+Dep readings_to_daily_energy {
+  readings -> daily_energy
+  note: 'Rollup harian: energi = selisih nilai kumulatif; peak_power = MAX(power); avg_pf = AVG(power_factor).'
+  materialized: 'TimescaleDB continuous aggregate'
+  query: '''time_bucket('1 day', time), GROUP BY device_id, day'''
+}

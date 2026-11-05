@@ -1,5 +1,10 @@
 # Flowchart Program Utama EMS
 
+Versi draw.io multi-halaman yang dapat diedit tersedia di
+[`program-flowcharts.drawio`](./program-flowcharts.drawio). File tersebut
+memuat flowchart program utama dan subrutin polling Modbus, normalisasi,
+ingest MQTT, alarm, query histori, serta pembaruan frontend.
+
 Diagram ini menggambarkan alur runtime utama sistem berdasarkan implementasi
 acquisition worker, backend API, database/MQTT, dan frontend. Acquisition worker
 dan API berjalan sebagai proses terpisah.
