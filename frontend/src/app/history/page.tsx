@@ -11,7 +11,13 @@ import {
   DateRangePicker,
   type RangePreset,
 } from "@/components/ui/date-range-picker";
-import { getReadings, getRealtimeUrl } from "@/lib/api";
+import {
+  getEnergyTotals,
+  getReadings,
+  getRealtimeUrl,
+  type EnergyTotals,
+} from "@/lib/api";
+import { DEMO_MODE } from "@/lib/demo-mode";
 import { formatNumber } from "@/lib/format";
 import { generateProfileForRange } from "@/lib/mock-data";
 import { POWER_QUALITY_SERIES } from "@/components/dashboard/power-chart";
@@ -40,12 +46,15 @@ export default function HistoryPage() {
     preset: "24h" as RangePreset,
   });
   const [data, setData] = useState<TimeSeriesPoint[]>(() =>
-    generateProfileForRange(
-      isoDate(new Date(now.getTime() - 86_400_000)),
-      isoDate(now),
-    ),
+    DEMO_MODE
+      ? generateProfileForRange(
+          isoDate(new Date(now.getTime() - 86_400_000)),
+          isoDate(now),
+        )
+      : [],
   );
-  const [isDemo, setIsDemo] = useState(true);
+  const [energy, setEnergy] = useState<EnergyTotals | null>(null);
+  const [isDemo, setIsDemo] = useState(DEMO_MODE);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,6 +64,7 @@ export default function HistoryPage() {
       setError("Rentang tanggal tidak valid. Pilih tanggal mulai dan akhir yang benar.");
       setLoading(false);
       setData([]);
+      setEnergy(null);
       setIsDemo(false);
       return () => {
         active = false;
@@ -76,26 +86,30 @@ export default function HistoryPage() {
       }
       inFlight = true;
       try {
-        const points = await getReadings({
-          from: dateParam(range.from),
-          to: dateParam(range.to, true),
-          bucket: days <= 2 ? "5m" : "1d",
-        });
+        const from = dateParam(range.from);
+        const to = dateParam(range.to, true);
+        const [points, totals] = await Promise.all([
+          getReadings({ from, to, bucket: days <= 2 ? "5m" : "1d" }),
+          getEnergyTotals({ from, to }),
+        ]);
         if (active) {
-          if (points.length === 0) {
+          if (points.length === 0 && DEMO_MODE) {
             setData(generateProfileForRange(range.from, range.to));
+            setEnergy(null);
             setIsDemo(true);
             setError("Belum ada histori di backend.");
           } else {
             setData(points);
+            setEnergy(totals);
             setIsDemo(false);
             setError(null);
           }
         }
       } catch (cause: unknown) {
         if (active) {
-          setData(generateProfileForRange(range.from, range.to));
-          setIsDemo(true);
+          setData(DEMO_MODE ? generateProfileForRange(range.from, range.to) : []);
+          setEnergy(null);
+          setIsDemo(DEMO_MODE);
           setError(cause instanceof Error ? cause.message : "Gagal memuat histori.");
         }
       } finally {
@@ -143,15 +157,16 @@ export default function HistoryPage() {
     };
   }, [range.from, range.to]);
 
-  const totalEnergy = data.length > 1
-    ? Math.max(0, data[data.length - 1].energy - data[0].energy)
-    : 0;
-  const totalReactive = data.length > 1
-    ? Math.max(0, data[data.length - 1].energyReactive - data[0].energyReactive)
-    : 0;
-  const totalApparent = data.length > 1
-    ? Math.max(0, data[data.length - 1].energyApparent - data[0].energyApparent)
-    : 0;
+  // Total energi dihitung backend sebagai jumlah delta per meter (meter yang
+  // offline di awal/akhir rentang tidak merusak total). Selisih titik pertama
+  // dan terakhir hanya dipakai untuk fixture mode demo.
+  const demoDelta = (key: "energy" | "energyReactive" | "energyApparent") =>
+    isDemo && data.length > 1
+      ? Math.max(0, data[data.length - 1][key] - data[0][key])
+      : 0;
+  const totalEnergy = energy?.energyActive ?? demoDelta("energy");
+  const totalReactive = energy?.energyReactive ?? demoDelta("energyReactive");
+  const totalApparent = energy?.energyApparent ?? demoDelta("energyApparent");
   const peak = data.reduce((maximum, point) => Math.max(maximum, point.power), 0);
   const peakApparent = data.reduce(
     (maximum, point) => Math.max(maximum, point.apparentPower),

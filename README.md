@@ -55,7 +55,21 @@ Frontend mengambil data dari API backend. Secara default API URL adalah
 frontend jika backend berada di host/port lain. WebSocket menggunakan URL yang
 sama dengan skema `ws://`; atur `NEXT_PUBLIC_WS_URL` hanya jika endpoint WS
 berbeda. Jika backend belum tersedia atau belum memiliki data meter, dashboard
-menampilkan fixture simulasi realistis dan menandainya sebagai **Mode demo**.
+menampilkan pesan error dan **tidak** menampilkan angka palsu.
+
+Untuk presentasi tanpa backend sama sekali, aktifkan data mock frontend secara
+eksplisit dengan `NEXT_PUBLIC_DEMO_MODE=true` (ditandai **Mode demo** di UI).
+Untuk data dummy yang mengalir lewat backend, gunakan `ACQUISITION_MODE=simulator`.
+
+## Migrasi Database
+
+File di `database/init/` hanya dijalankan saat volume database pertama kali
+dibuat. Untuk database yang sudah berjalan, jalankan file di
+`database/migrations/` secara berurutan, misalnya:
+
+```bash
+docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/001-daily-energy-wib.sql
+```
 
 ## Status
 

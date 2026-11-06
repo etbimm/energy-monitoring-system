@@ -1,3 +1,5 @@
+import { DEMO_MODE } from "@/lib/demo-mode";
+
 export function DataState({
   loading,
   error,
@@ -11,8 +13,11 @@ export function DataState({
         role="alert"
         className="mb-4 rounded-lg border border-red-300 bg-red-100 px-4 py-3 text-sm font-medium text-red-900"
       >
-        {error} Data simulasi digunakan sebagai pengganti. Pastikan backend berjalan
-        dan NEXT_PUBLIC_API_URL sudah benar untuk melihat data aktual.
+        {error}{" "}
+        {DEMO_MODE
+          ? "Data simulasi digunakan sebagai pengganti."
+          : "Data tidak dapat ditampilkan."}{" "}
+        Pastikan backend berjalan dan NEXT_PUBLIC_API_URL sudah benar.
       </div>
     );
   }

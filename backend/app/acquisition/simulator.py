@@ -2,9 +2,24 @@ from __future__ import annotations
 
 import math
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from app.acquisition.normalize import to_telemetry
+from app.acquisition.profiles import DEVICE_MODEL, PROFILES
+
+VOLTAGE_KEYS = (
+    "voltage_l1", "voltage_l2", "voltage_l3",
+    "voltage_l12", "voltage_l23", "voltage_l31",
+)
+SQRT3 = math.sqrt(3)
+ENERGY_EPOCH = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+
+def _model_register_keys(model: str | None) -> set[str] | None:
+    profile = PROFILES.get(model or "")
+    if profile is None:
+        return None
+    return {register.key for register in profile.registers}
 
 NOMINAL = {
     "PM-LVMDP-IN-01": {"power": 118.6, "pf": 0.94, "energy": 1421.3, "thd_i": 2.4, "thd_u": 1.3, "u_unb": 0.6, "i_unb": 1.8},
@@ -44,7 +59,11 @@ def _load_factor(hour: int) -> float:
     return 0.35
 
 
-def simulate_decoded(device_code: str, capabilities: dict) -> dict[str, float] | None:
+def simulate_decoded(
+    device_code: str,
+    capabilities: dict,
+    model: str | None = None,
+) -> dict[str, float] | None:
     spec = NOMINAL.get(device_code)
     if spec is None or spec.get("offline"):
         return None
@@ -55,18 +74,18 @@ def simulate_decoded(device_code: str, capabilities: dict) -> dict[str, float] |
     pf = spec["pf"]
     apparent = power / pf if pf else power
     reactive = power * math.tan(math.acos(min(max(pf, 0.01), 0.999))) if 0 < pf < 1 else 0.0
+    # Tegangan antar-fasa (L-L) ~400 V; fasa-netral (L-N) = L-L / sqrt(3) ~231 V.
     voltage = 400 + (random.random() - 0.5) * 4
-    current = apparent * 1000 / (math.sqrt(3) * voltage) if voltage else 0.0
-    history_start = datetime(
-        now.year, now.month, now.day, tzinfo=timezone.utc
-    ) - timedelta(days=29)
-    elapsed_days = (now - history_start).total_seconds() / 86400
+    voltage_ln = voltage / SQRT3
+    current = apparent * 1000 / (SQRT3 * voltage) if voltage else 0.0
+    # Titik awal tetap agar counter kWh selalu naik (monoton) seperti meter asli.
+    elapsed_days = (now - ENERGY_EPOCH).total_seconds() / 86400
     energy = spec["energy"] + spec["power"] * 0.59 * elapsed_days
 
     decoded = {
-        "voltage_l1": voltage + 0.4,
-        "voltage_l2": voltage - 0.2,
-        "voltage_l3": voltage,
+        "voltage_l1": round(voltage_ln + 0.2, 3),
+        "voltage_l2": round(voltage_ln - 0.1, 3),
+        "voltage_l3": round(voltage_ln, 3),
         "voltage_l12": voltage + 0.4,
         "voltage_l23": voltage - 0.2,
         "voltage_l31": voltage,
@@ -91,11 +110,24 @@ def simulate_decoded(device_code: str, capabilities: dict) -> dict[str, float] |
     if capabilities.get("unbalance"):
         decoded["unbalance_voltage"] = spec.get("u_unb", 0.5)
         decoded["unbalance_current"] = spec.get("i_unb", 1.5)
+
+    # Kirim hanya register tegangan yang memang dimiliki model meter
+    # (PAC3220 hanya L-L, model lain hanya L-N) agar perilakunya sama dengan
+    # meter fisik.
+    register_keys = _model_register_keys(model or DEVICE_MODEL.get(device_code))
+    if register_keys is not None:
+        for key in VOLTAGE_KEYS:
+            if key not in register_keys:
+                decoded.pop(key, None)
     return decoded
 
 
-def simulate_telemetry(device_code: str, capabilities: dict) -> dict | None:
-    decoded = simulate_decoded(device_code, capabilities)
+def simulate_telemetry(
+    device_code: str,
+    capabilities: dict,
+    model: str | None = None,
+) -> dict | None:
+    decoded = simulate_decoded(device_code, capabilities, model)
     if decoded is None:
         return None
     return to_telemetry(device_code, decoded, capabilities)

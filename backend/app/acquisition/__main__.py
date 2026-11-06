@@ -98,7 +98,7 @@ async def run() -> None:
                         topic_status = f"{settings.mqtt_topic_prefix}/meter/{code}/status"
                         try:
                             if settings.acquisition_mode == "simulator":
-                                payload = simulate_telemetry(code, caps)
+                                payload = simulate_telemetry(code, caps, device["model"])
                             else:
                                 profile = get_profile(device["model"])
                                 payload = await poll_device(

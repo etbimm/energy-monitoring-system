@@ -230,6 +230,27 @@ export async function getReadings({
   }));
 }
 
+export interface EnergyTotals {
+  energyActive: number;
+  energyReactive: number;
+  energyApparent: number;
+  devices: number;
+}
+
+export function getEnergyTotals({
+  from,
+  to,
+  device,
+}: {
+  from: string;
+  to: string;
+  device?: string;
+}): Promise<EnergyTotals> {
+  const params = new URLSearchParams({ from, to });
+  if (device) params.set("device", device);
+  return request(`/api/energy?${params}`);
+}
+
 export function getAlarms(includeCleared = false): Promise<Alarm[]> {
   return request(`/api/alarms?include_cleared=${includeCleared}`);
 }

@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     acquisition_mode: str = "simulator"  # simulator | modbus
     modbus_timeout: float = 2.0
 
+    # Zona waktu lokal pabrik untuk batas "hari ini" dan bucket harian.
+    timezone: str = "Asia/Jakarta"
+
     offline_warning_seconds: int = 30
     offline_critical_seconds: int = 180
 
@@ -33,6 +36,23 @@ class Settings(BaseSettings):
         if value == "":
             return None
         return value
+
+    @field_validator("timezone")
+    @classmethod
+    def valid_timezone(cls, value: str) -> str:
+        import re
+        from zoneinfo import ZoneInfo
+
+        if not re.fullmatch(r"[A-Za-z0-9_+\-/]+", value):
+            raise ValueError("timezone tidak valid")
+        ZoneInfo(value)
+        return value
+
+    @property
+    def tz(self):
+        from zoneinfo import ZoneInfo
+
+        return ZoneInfo(self.timezone)
 
     @property
     def cors_origin_list(self) -> list[str]:

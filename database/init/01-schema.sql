@@ -156,11 +156,12 @@ SELECT add_continuous_aggregate_policy(
 );
 
 -- Rollup harian: energi = delta kumulatif (bukan SUM(power))
+-- Batas hari mengikuti WIB (00:00 Asia/Jakarta), bukan 00:00 UTC.
 CREATE MATERIALIZED VIEW IF NOT EXISTS daily_energy
 WITH (timescaledb.continuous) AS
 SELECT
   device_id,
-  time_bucket(INTERVAL '1 day', time) AS day,
+  time_bucket(INTERVAL '1 day', time, 'Asia/Jakarta') AS day,
   last(energy_active, time) - first(energy_active, time) AS energy_kwh,
   last(energy_reactive, time) - first(energy_reactive, time) AS energy_kvarh,
   MAX(power) AS peak_power,

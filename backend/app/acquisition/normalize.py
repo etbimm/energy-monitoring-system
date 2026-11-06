@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+SQRT3 = 3 ** 0.5
+
 
 def _mean(values: list[float | None]) -> float | None:
     present = [v for v in values if v is not None]
@@ -34,13 +36,22 @@ def to_telemetry(
     caps = capabilities or {}
     ts = timestamp or datetime.now(timezone.utc)
 
-    voltage = _mean(
-        [
-            _get(decoded, "voltage_l1", "voltage_l12"),
-            _get(decoded, "voltage_l2", "voltage_l23"),
-            _get(decoded, "voltage_l3", "voltage_l31"),
-        ]
+    # Tegangan fasa-netral (L-N, ~230 V) dan antar-fasa (L-L, ~400 V) dipisah
+    # karena model meter berbeda menyediakan register yang berbeda.
+    voltage_ln = _mean(
+        [decoded.get("voltage_l1"), decoded.get("voltage_l2"), decoded.get("voltage_l3")]
     )
+    voltage_ll = _mean(
+        [decoded.get("voltage_l12"), decoded.get("voltage_l23"), decoded.get("voltage_l31")]
+    )
+    # `voltage` = tegangan sistem L-L. Bila meter hanya punya L-N, L-L
+    # diturunkan dengan pendekatan sistem seimbang: V_LL = V_LN x sqrt(3).
+    if voltage_ll is not None:
+        voltage = voltage_ll
+    elif voltage_ln is not None:
+        voltage = round(voltage_ln * SQRT3 * 1000) / 1000
+    else:
+        voltage = None
     current = _mean(
         [
             decoded.get("current_l1"),
@@ -102,6 +113,8 @@ def to_telemetry(
         "device_code": device_code,
         "timestamp": ts.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "voltage": voltage,
+        "voltage_ln": voltage_ln,
+        "voltage_ll": voltage_ll,
         "current": current,
         "power": decoded.get("power"),
         "apparent_power": decoded.get("apparent_power"),

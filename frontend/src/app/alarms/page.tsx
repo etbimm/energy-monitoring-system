@@ -7,6 +7,7 @@ import { DataState } from "@/components/ui/data-state";
 import { DemoDataNotice } from "@/components/ui/demo-data-notice";
 import { acknowledgeAlarm, getAlarms } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
+import { DEMO_MODE } from "@/lib/demo-mode";
 import { ALARMS } from "@/lib/mock-data";
 import type { Alarm } from "@/lib/types";
 
@@ -32,16 +33,16 @@ function getDemoAlarms(current: Alarm[]) {
 }
 
 export default function AlarmsPage() {
-  const [alarms, setAlarms] = useState<Alarm[]>(ALARMS);
+  const [alarms, setAlarms] = useState<Alarm[]>(DEMO_MODE ? ALARMS : []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const [isDemo, setIsDemo] = useState(true);
+  const [isDemo, setIsDemo] = useState(DEMO_MODE);
 
   const refresh = useCallback(async () => {
     try {
       const currentAlarms = await getAlarms();
-      if (currentAlarms.length === 0) {
+      if (currentAlarms.length === 0 && DEMO_MODE) {
         setAlarms((current) => getDemoAlarms(current));
         setIsDemo(true);
         setError("Backend belum memiliki alarm. Menampilkan contoh alarm simulasi.");
@@ -51,8 +52,13 @@ export default function AlarmsPage() {
         setError(null);
       }
     } catch (cause) {
-      setAlarms((current) => getDemoAlarms(current));
-      setIsDemo(true);
+      if (DEMO_MODE) {
+        setAlarms((current) => getDemoAlarms(current));
+        setIsDemo(true);
+      } else {
+        setAlarms([]);
+        setIsDemo(false);
+      }
       setError(cause instanceof Error ? cause.message : "Gagal memuat alarm.");
     } finally {
       setLoading(false);

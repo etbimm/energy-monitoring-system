@@ -90,6 +90,13 @@ class SummaryOut(CamelModel):
     total: int
 
 
+class EnergyTotalsOut(CamelModel):
+    energy_active: float
+    energy_reactive: float
+    energy_apparent: float
+    devices: int
+
+
 class AlarmOut(CamelModel):
     id: str
     timestamp: datetime
@@ -104,6 +111,8 @@ class TelemetryIn(BaseModel):
     device_code: str
     timestamp: datetime | None = None
     voltage: float | None = None
+    voltage_ln: float | None = None
+    voltage_ll: float | None = None
     current: float | None = None
     power: float | None = None
     apparent_power: float | None = None

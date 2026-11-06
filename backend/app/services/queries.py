@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func, literal_column, select
+from sqlalchemy import case, func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models import Alarm, Device, PhaseReading, Reading
+from app.config import get_settings
 from app.schemas import (
     AlarmOut,
     DeviceOut,
+    EnergyTotalsOut,
     MeterCapabilities,
     PhaseReadingOut,
     SummaryOut,
@@ -33,7 +36,7 @@ def _caps(raw: dict | None, model: str) -> MeterCapabilities:
 
 def _severity_rank():
     return func.max(
-        func.case(
+        case(
             (Alarm.severity == "critical", 2),
             (Alarm.severity == "warning", 1),
             else_=0,
@@ -48,6 +51,7 @@ async def list_devices(session: AsyncSession) -> list[DeviceOut]:
         .order_by(Reading.device_id, Reading.time.desc())
         .subquery()
     )
+    latest_reading = aliased(Reading, latest)
     open_alarm = (
         select(Alarm.device_id, _severity_rank().label("rank"))
         .where(Alarm.cleared_at.is_(None))
@@ -57,8 +61,8 @@ async def list_devices(session: AsyncSession) -> list[DeviceOut]:
 
     rows = (
         await session.execute(
-            select(Device, latest, open_alarm.c.rank)
-            .outerjoin(latest, Device.id == latest.c.device_id)
+            select(Device, latest_reading, open_alarm.c.rank)
+            .outerjoin(latest_reading, Device.id == latest_reading.device_id)
             .outerjoin(open_alarm, Device.id == open_alarm.c.device_id)
             .order_by(Device.id)
         )
@@ -131,35 +135,84 @@ async def list_devices(session: AsyncSession) -> list[DeviceOut]:
     return result
 
 
+def local_day_start(now: datetime | None = None) -> datetime:
+    """Awal hari (00:00) di zona waktu lokal pabrik, dikembalikan dalam UTC."""
+    tz = get_settings().tz
+    local_now = (now or datetime.now(timezone.utc)).astimezone(tz)
+    return local_now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+
+
+def _device_filter(device_code: str | None, role: str | None):
+    if device_code:
+        return Device.device_code == device_code
+    return Device.role == (role or "incoming")
+
+
+async def get_energy_totals(
+    session: AsyncSession,
+    *,
+    start: datetime,
+    end: datetime,
+    device_code: str | None = None,
+    role: str | None = "incoming",
+) -> EnergyTotalsOut:
+    """Total energi rentang waktu = jumlah delta per meter.
+
+    Delta dihitung per meter (`last - first`) baru dijumlahkan, sehingga meter
+    yang offline di awal/akhir rentang tidak merusak total. Delta negatif
+    (counter reset / meter diganti) diabaikan.
+    """
+    per_device = (
+        select(
+            Reading.device_id,
+            (
+                func.last(Reading.energy_active, Reading.time)
+                - func.first(Reading.energy_active, Reading.time)
+            ).label("active"),
+            (
+                func.last(Reading.energy_reactive, Reading.time)
+                - func.first(Reading.energy_reactive, Reading.time)
+            ).label("reactive"),
+            (
+                func.last(Reading.energy_apparent, Reading.time)
+                - func.first(Reading.energy_apparent, Reading.time)
+            ).label("apparent"),
+        )
+        .join(Device, Device.id == Reading.device_id)
+        .where(Reading.time >= start, Reading.time <= end, _device_filter(device_code, role))
+        .group_by(Reading.device_id)
+    )
+    rows = (await session.execute(per_device)).all()
+
+    def positive_sum(attr: str) -> float:
+        total = 0.0
+        for row in rows:
+            value = getattr(row, attr)
+            if value is not None and value > 0:
+                total += float(value)
+        return total
+
+    return EnergyTotalsOut(
+        energy_active=positive_sum("active"),
+        energy_reactive=positive_sum("reactive"),
+        energy_apparent=positive_sum("apparent"),
+        devices=len(rows),
+    )
+
+
 async def get_summary(session: AsyncSession) -> SummaryOut:
     devices = await list_devices(session)
     incoming = [item for item in devices if item.role == "incoming"]
-    start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-
-    energy_rows = (
-        await session.execute(
-            select(
-                Device.id,
-                (
-                    func.last(Reading.energy_active, Reading.time)
-                    - func.first(Reading.energy_active, Reading.time)
-                ).label("delta"),
-            )
-            .join(Reading, Reading.device_id == Device.id)
-            .where(Device.role == "incoming", Reading.time >= start)
-            .group_by(Device.id)
-        )
-    ).all()
-    energy_today = 0.0
-    for _, delta in energy_rows:
-        if delta is not None and delta >= 0:
-            energy_today += float(delta)
+    now = datetime.now(timezone.utc)
+    totals = await get_energy_totals(
+        session, start=local_day_start(now), end=now, role="incoming"
+    )
 
     return SummaryOut(
         total_power=sum(item.power or 0 for item in incoming),
         total_apparent_power=sum(item.apparent_power or 0 for item in incoming),
         total_reactive_power=sum(item.reactive_power or 0 for item in incoming),
-        energy_today=energy_today,
+        energy_today=totals.energy_active,
         online=sum(1 for item in devices if item.status == "online"),
         warning=sum(1 for item in devices if item.status == "warning"),
         offline=sum(1 for item in devices if item.status == "offline"),
@@ -181,10 +234,23 @@ def _bucket_interval(bucket: str) -> str | None:
     return mapping[bucket]
 
 
+def _bucket_expr(interval: str):
+    """time_bucket; bucket harian mengikuti zona waktu lokal (00:00 WIB)."""
+    width = literal_column(f"INTERVAL '{interval}'")
+    if interval == "1 day":
+        # Nama zona sudah divalidasi di Settings, aman dijadikan literal SQL.
+        tz = literal_column(f"'{get_settings().timezone}'")
+        return func.time_bucket(width, Reading.time, tz)
+    return func.time_bucket(width, Reading.time)
+
+
 def _point(ts: datetime, row) -> TimeSeriesPoint:
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    local = ts.astimezone(get_settings().tz)
     return TimeSeriesPoint(
         timestamp=ts,
-        label=ts.strftime("%H:%M"),
+        label=local.strftime("%H:%M"),
         power=row.power,
         apparent_power=row.apparent_power,
         reactive_power=row.reactive_power,
@@ -199,6 +265,12 @@ def _point(ts: datetime, row) -> TimeSeriesPoint:
     )
 
 
+# Mode raw untuk gabungan beberapa meter tidak bisa dikelompokkan per
+# timestamp persis (tiap meter dibaca pada detik berbeda), jadi dibulatkan
+# ke bucket minimum ini.
+AGGREGATE_RAW_INTERVAL = "1 minute"
+
+
 async def get_readings(
     session: AsyncSession,
     *,
@@ -210,7 +282,7 @@ async def get_readings(
 ) -> list[TimeSeriesPoint]:
     interval = _bucket_interval(bucket)
     filters = [Reading.time >= start, Reading.time <= end]
-    device_filter = Device.device_code == device_code if device_code else Device.role == (role or "incoming")
+    device_filter = _device_filter(device_code, role)
 
     if interval is None:
         if device_code:
@@ -222,34 +294,9 @@ async def get_readings(
             )
             rows = (await session.execute(stmt)).scalars().all()
             return [_point(row.time, row) for row in rows]
+        interval = AGGREGATE_RAW_INTERVAL
 
-        stmt = (
-            select(
-                Reading.time,
-                func.sum(Reading.power).label("power"),
-                func.sum(Reading.apparent_power).label("apparent_power"),
-                func.sum(Reading.reactive_power).label("reactive_power"),
-                func.sum(Reading.energy_active).label("energy_active"),
-                func.sum(Reading.energy_reactive).label("energy_reactive"),
-                func.sum(Reading.energy_apparent).label("energy_apparent"),
-                func.avg(Reading.voltage).label("voltage"),
-                func.avg(Reading.current).label("current"),
-                func.avg(Reading.frequency).label("frequency"),
-                (
-                    func.sum(Reading.power)
-                    / func.nullif(func.sum(Reading.apparent_power), 0)
-                ).label("power_factor"),
-                func.avg(Reading.thd_current).label("thd_current"),
-            )
-            .join(Device, Device.id == Reading.device_id)
-            .where(*filters, device_filter)
-            .group_by(Reading.time)
-            .order_by(Reading.time)
-        )
-        rows = (await session.execute(stmt)).all()
-        return [_point(row.time, row) for row in rows]
-
-    bucket_col = func.time_bucket(literal_column(f"INTERVAL '{interval}'"), Reading.time).label("bucket")
+    bucket_col = _bucket_expr(interval).label("bucket")
     per_device = (
         select(
             Reading.device_id,

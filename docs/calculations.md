@@ -36,7 +36,10 @@ saat mengubah file kode yang relevan.
 | Skala register ke engineering value | `nilai = raw / skala_register`, dibulatkan 3 desimal. Skala ditetapkan per register/model. | [`backend/app/acquisition/decoder.py`](../backend/app/acquisition/decoder.py); profil dan skalanya di [`backend/app/acquisition/profiles.py`](../backend/app/acquisition/profiles.py). |
 | Interpretasi integer signed | `int16 = raw - 2^16` jika `raw > 2^15 - 1`; `int32 = raw - 2^32` jika nilai unsigned `> 2^31 - 1`; selain itu nilai dipertahankan. | [`backend/app/acquisition/decoder.py`](../backend/app/acquisition/decoder.py). |
 | Gabung register 32-bit | Little-endian: `low + high × 65536`. Big-endian: `high × 65536 + low`. | [`backend/app/acquisition/decoder.py`](../backend/app/acquisition/decoder.py). |
-| Nilai tegangan/arus meter rata-rata | `mean(x) = Σ nilai fasa yang tersedia / jumlah nilai fasa yang tersedia`; hasil dibulatkan 3 desimal. Jika tidak ada input, hasil `null`. | [`backend/app/acquisition/normalize.py`](../backend/app/acquisition/normalize.py). Tegangan mengambil L1/L2/L3 (atau alias antar-fasa); arus mengambil arus fasa. |
+| Nilai tegangan/arus meter rata-rata | `mean(x) = Σ nilai fasa yang tersedia / jumlah nilai fasa yang tersedia`; hasil dibulatkan 3 desimal. Jika tidak ada input, hasil `null`. | [`backend/app/acquisition/normalize.py`](../backend/app/acquisition/normalize.py). Arus mengambil arus fasa. |
+| Tegangan L-N dan L-L | `voltage_ln = mean(V L1, V L2, V L3)` (fasa-netral, ~230 V); `voltage_ll = mean(V L1-L2, V L2-L3, V L3-L1)` (antar-fasa, ~400 V). Masing-masing `null` bila register tidak dimiliki model meter (PAC3220 hanya L-L; DMG510, Elite440, AMC96, EM220 hanya L-N). | [`backend/app/acquisition/normalize.py`](../backend/app/acquisition/normalize.py). Dikirim di payload MQTT untuk evaluasi alarm; tidak disimpan sebagai kolom terpisah. |
+| Tegangan sistem `voltage` (disimpan) | Selalu bermakna L-L. `voltage = voltage_ll` bila terukur; jika tidak, `voltage = voltage_ln × √3` (pendekatan sistem tiga fasa seimbang), dibulatkan 3 desimal. | [`backend/app/acquisition/normalize.py`](../backend/app/acquisition/normalize.py); disimpan di `readings.voltage`. |
+| Tegangan per fasa | Memakai L-N per fasa bila tersedia; jika model hanya punya L-L, memakai pasangan antar-fasa (L1-L2, L2-L3, L3-L1). | [`backend/app/acquisition/normalize.py`](../backend/app/acquisition/normalize.py); disimpan di `phase_readings.voltage`. |
 | THD-I dan THD-U total | Rata-rata nilai THD per fasa yang tersedia, dengan aturan mean yang sama. Hasil dijadikan `null` bila kapabilitas meter menyatakan parameter tidak didukung. | [`backend/app/acquisition/normalize.py`](../backend/app/acquisition/normalize.py). |
 | Nilai per fasa | Tegangan, arus, daya, kVA, kVAR dan THD per fasa diteruskan ke payload sesuai nilai register; pada jalur telemetry nyata tidak dibentuk ulang di normalizer. | [`backend/app/acquisition/normalize.py`](../backend/app/acquisition/normalize.py). PF per fasa kemudian dihitung backend seperti pada §2. |
 
@@ -58,15 +61,18 @@ dapat berbeda.
 
 | Perhitungan | Rumus / aturan implementasi | Lokasi dan penggunaan |
 |---|---|---|
-| Energi aktif hari ini | Per meter incoming: `last(kWh hari ini) - first(kWh hari ini)`. Hanya delta yang tersedia dan `>= 0` dijumlahkan. | `get_summary` di [`backend/app/services/queries.py`](../backend/app/services/queries.py). |
+| Awal "hari ini" | 00:00 zona waktu lokal (`Settings.timezone`, default `Asia/Jakarta`/WIB), dikonversi ke UTC (= 17:00 UTC hari sebelumnya). | `local_day_start` di [`backend/app/services/queries.py`](../backend/app/services/queries.py). |
+| Total energi rentang waktu | Per meter: `delta = last(E) - first(E)` dalam rentang; total = `Σ delta` untuk delta yang tersedia dan `> 0` (delta negatif akibat counter reset/meter diganti diabaikan). Berlaku untuk kWh, kVARh, dan kVAh. | `get_energy_totals` di [`backend/app/services/queries.py`](../backend/app/services/queries.py); endpoint `GET /api/energy` di [`backend/app/api/readings.py`](../backend/app/api/readings.py); dipakai halaman History. |
+| Energi aktif hari ini | Total energi aktif meter incoming (rumus baris di atas) dari awal hari lokal sampai sekarang. | `get_summary` di [`backend/app/services/queries.py`](../backend/app/services/queries.py). |
 | Ringkasan daya sistem | Menjumlahkan P, S, dan Q dari meter ber-role `incoming`. Query tidak menerapkan filter status offline pada daftar incoming; nilai terakhir yang tersimpan tetap dapat ikut terhitung. | `get_summary` di [`backend/app/services/queries.py`](../backend/app/services/queries.py). |
 | Jumlah meter per status | Menghitung banyak perangkat berstatus `online`, `warning`, dan `offline`; total perangkat = jumlah seluruh perangkat. | `get_summary` di [`backend/app/services/queries.py`](../backend/app/services/queries.py) dan fallback demo di [`frontend/src/lib/mock-data.ts`](../frontend/src/lib/mock-data.ts). |
 | Time series tanpa bucket, satu meter | Mengembalikan pembacaan tersimpan tanpa menghitung ulang nilai per-meter. | Cabang raw per-device di [`backend/app/services/queries.py`](../backend/app/services/queries.py). |
-| Time series tanpa bucket, beberapa meter | Per waktu: P, S, Q dan energi dijumlahkan; V, I, f, dan THD-I dirata-ratakan; `PF = ΣP / ΣS` (jika penyebut bukan nol). | Cabang raw agregat di [`backend/app/services/queries.py`](../backend/app/services/queries.py). |
+| Time series tanpa bucket, beberapa meter | Tidak dikelompokkan per timestamp persis (tiap meter dibaca pada detik berbeda). Diproses sebagai bucket `1 minute` (`AGGREGATE_RAW_INTERVAL`) dengan rumus bucket di bawah. | `get_readings` di [`backend/app/services/queries.py`](../backend/app/services/queries.py). |
+| Batas bucket harian | Bucket `1d` memakai `time_bucket('1 day', time, 'Asia/Jakarta')` sehingga satu hari = 00:00–24:00 WIB. Bucket lain memakai `time_bucket` biasa. Label titik (`HH:MM`) ditampilkan dalam waktu lokal. | `_bucket_expr` dan `_point` di [`backend/app/services/queries.py`](../backend/app/services/queries.py). |
 | Rata-rata dalam bucket per meter | P, S, Q, V, I, f, dan THD-I memakai `AVG`; energi memakai nilai terakhir (`last`) pada bucket; PF per meter di bucket = `AVG(P) / AVG(S)`. | Subquery bucket per meter di [`backend/app/services/queries.py`](../backend/app/services/queries.py). |
 | Gabungan meter di bucket | P, S, Q, dan energi per-meter dijumlahkan; V, I, f, dan THD-I antar-meter dirata-ratakan; PF gabungan = `Σ AVG(P per meter) / Σ AVG(S per meter)`. | Query akhir bucket di [`backend/app/services/queries.py`](../backend/app/services/queries.py). |
 | Continuous aggregate 1 menit dan 15 menit | Daya, V, I, f, dan PF menggunakan `AVG`; THD-I/THD-U juga menggunakan `AVG` di bucket 1 menit. Register energi menggunakan nilai `last` dalam bucket. | View `readings_1min` dan `readings_15min` di [`database/init/01-schema.sql`](../database/init/01-schema.sql). |
-| Rollup energi harian | `energy_kwh = last(kWh) - first(kWh)`; `energy_kvarh = last(kVARh) - first(kVARh)`; daya puncak = `MAX(P)`; PF rata-rata = `AVG(PF)`. | View `daily_energy` di [`database/init/01-schema.sql`](../database/init/01-schema.sql). |
+| Rollup energi harian | Hari = `time_bucket('1 day', time, 'Asia/Jakarta')` (00:00 WIB). `energy_kwh = last(kWh) - first(kWh)`; `energy_kvarh = last(kVARh) - first(kVARh)`; daya puncak = `MAX(P)`; PF rata-rata = `AVG(PF)`. | View `daily_energy` di [`database/init/01-schema.sql`](../database/init/01-schema.sql); migrasi DB berjalan di [`database/migrations/001-daily-energy-wib.sql`](../database/migrations/001-daily-energy-wib.sql). |
 | Peringkat severity alarm perangkat | Critical dipetakan ke 2, warning ke 1, lainnya ke 0; perangkat memakai nilai maksimum severity alarm yang masih terbuka. | `_severity_rank` di [`backend/app/services/queries.py`](../backend/app/services/queries.py). |
 
 ### Frontend
@@ -75,7 +81,7 @@ dapat berbeda.
 |---|---|---|
 | Total panel | Untuk meter dalam panel, kecualikan role `outcoming` dan meter offline; jumlahkan P, S, Q, dan kWh. | [`frontend/src/lib/device-data.ts`](../frontend/src/lib/device-data.ts); fixture panel juga dihitung di [`frontend/src/lib/mock-data.ts`](../frontend/src/lib/mock-data.ts). |
 | Persentase status perangkat | `round(jumlah status / total perangkat × 100)`; jika total 0, hasil 0%. | [`frontend/src/components/dashboard/device-status-summary.tsx`](../frontend/src/components/dashboard/device-status-summary.tsx). |
-| Ringkasan histori | Energi kWh/kVARh/kVAh = `max(0, energi titik terakhir - energi titik pertama)` bila ada minimal dua titik. Puncak daya = maksimum seri; rata-rata P = `ΣP / jumlah titik`. | [`frontend/src/app/history/page.tsx`](../frontend/src/app/history/page.tsx). |
+| Ringkasan histori | Energi kWh/kVARh/kVAh diambil dari `GET /api/energy` (jumlah delta per meter, lihat tabel backend). Hanya pada mode demo (`NEXT_PUBLIC_DEMO_MODE=true`) dipakai `max(0, energi titik terakhir - energi titik pertama)` dari fixture. Puncak daya = maksimum seri; rata-rata P = `ΣP / jumlah titik`. | [`frontend/src/app/history/page.tsx`](../frontend/src/app/history/page.tsx). |
 | PF rata-rata histori | Rata-rata P dibagi rata-rata S. UI menampilkan `-` jika daya semu puncak tidak positif. | [`frontend/src/app/history/page.tsx`](../frontend/src/app/history/page.tsx). |
 | Ringkasan Power Quality | Menentukan THD-I maksimum, THD-U maksimum per panel, serta frekuensi minimum/maksimum dan jumlah meter yang melewati ambang. | [`frontend/src/app/power-quality/page.tsx`](../frontend/src/app/power-quality/page.tsx). |
 | Skala progress THD | `min(100, THD-I / ambang_kritis × 100)` sebagai lebar progress bar. | [`frontend/src/app/power-quality/page.tsx`](../frontend/src/app/power-quality/page.tsx). |
@@ -95,7 +101,8 @@ Implementasi di [`backend/app/services/alarms.py`](../backend/app/services/alarm
 | Metrik | Rumus / kondisi warning | Kondisi critical |
 |---|---|---|
 | PF | `PF < 0.90` | `PF < 0.85` |
-| Tegangan | `0 < V < 385` atau `V > 415` | `0 < V < 350` atau `V > 440` |
+| Tegangan L-L (antar-fasa) | `0 < V < 385` atau `V > 415` | `0 < V < 350` atau `V > 440` |
+| Tegangan L-N (fasa-netral) | `0 < V < 222.3` atau `V > 239.6` | `0 < V < 202.1` atau `V > 254.0` |
 | Deviasi frekuensi | `abs(f - 50 Hz) > 0.5 Hz` | `abs(f - 50 Hz) > 1.0 Hz` |
 | THD arus | `THD-I >= 5%` | `THD-I >= 8%` |
 | Unbalance tegangan | `unbalance V > 2%` | `unbalance V > 5%` |
@@ -103,6 +110,11 @@ Implementasi di [`backend/app/services/alarms.py`](../backend/app/services/alarm
 
 Beban dihitung hanya bila kapasitas terpasang dan P bernilai truthy. Alarm
 frekuensi dan tegangan juga memerlukan input lebih dari nol.
+
+Batas L-N = batas L-L dibagi √3 (dibulatkan 1 desimal). Alarm tegangan memakai
+tegangan yang benar-benar diukur meter: `voltage_ln` bila ada, lalu
+`voltage_ll`, lalu `voltage` (dianggap L-L) untuk payload lama. Pesan alarm
+menyebut jenis tegangannya (L-N atau L-L).
 
 ### Status, threshold UI, dan timeout
 
@@ -136,10 +148,15 @@ Di [`backend/app/acquisition/simulator.py`](../backend/app/acquisition/simulator
 - `jitter = 0.97 + random × 0.06`; `P = daya_nominal × load_factor × jitter`.
 - `S = P / PF` (atau P bila PF nol).
 - `Q = P × tan(acos(clamp(PF, 0.01, 0.999)))` untuk `0 < PF < 1`, selain itu 0.
-- Tegangan nominal simulasi `V = 400 + (random - 0.5) × 4`.
-- Arus perkiraan tiga fasa `I = S × 1000 / (sqrt(3) × V)` (atau 0 jika V nol).
-- Energi aktif simulasi `E = energi_awal + daya_nominal × 0.59 × elapsed_days`;
-  energi reaktif simulasi `kVARh = E × 0.4`.
+- Tegangan antar-fasa simulasi `V_LL = 400 + (random - 0.5) × 4`; tegangan
+  fasa-netral `V_LN = V_LL / √3` (~231 V) dengan offset per fasa `+0.2`, `-0.1`, `0`.
+  Simulator hanya mengirim register tegangan yang dimiliki model meter
+  (PAC3220: L-L saja; model lain: L-N saja), sesuai `PROFILES`.
+- Arus perkiraan tiga fasa `I = S × 1000 / (sqrt(3) × V_LL)` (atau 0 jika V nol).
+- Energi aktif simulasi `E = energi_awal + daya_nominal × 0.59 × elapsed_days`,
+  dengan `elapsed_days` dihitung dari titik tetap `2026-01-01 00:00 UTC` agar
+  counter selalu naik (monoton) seperti meter asli; energi reaktif simulasi
+  `kVARh = E × 0.4`.
 - Frekuensi `f = 50 + (random - 0.5) × 0.06`.
 - Nilai arus per fasa disintesis sebagai `I × 0.34`, `I × 0.33`, `I × 0.33`;
   tegangan fasa ditambah offset kecil dari tegangan dasar.

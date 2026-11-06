@@ -22,3 +22,34 @@ def test_simulated_online_meters_have_thd_readings():
             assert reading["thd_voltage"] is None
         else:
             assert reading["thd_voltage"] is not None
+
+
+def test_simulator_sends_only_voltage_registers_of_the_model():
+    caps = {"thdCurrent": True, "thdVoltage": True}
+    pac = simulate_telemetry("PM-LVMDP-IN-01", caps, "SIEMENS PAC3220")
+    assert pac["voltage_ln"] is None
+    assert 395 < pac["voltage_ll"] < 405
+
+    acrel = simulate_telemetry("PM-MCC1-01", caps, "ACREL AMC96")
+    assert acrel["voltage_ll"] is None
+    assert 225 < acrel["voltage_ln"] < 235
+    assert 395 < acrel["voltage"] < 405
+
+
+def test_simulated_energy_counter_is_monotonic(monkeypatch):
+    from datetime import datetime, timezone
+
+    import app.acquisition.simulator as simulator
+
+    readings = []
+    for day, hour in [(5, 23), (6, 1), (7, 12)]:
+        fixed = datetime(2026, 11, day, hour, tzinfo=timezone.utc)
+
+        class FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed
+
+        monkeypatch.setattr(simulator, "datetime", FixedDateTime)
+        readings.append(simulator.simulate_decoded("PM-LVMDP-IN-01", {})["energy_active"])
+    assert readings == sorted(readings)

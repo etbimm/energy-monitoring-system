@@ -12,6 +12,7 @@ import { DataState } from "@/components/ui/data-state";
 import { DemoDataNotice } from "@/components/ui/demo-data-notice";
 import { getReadings } from "@/lib/api";
 import { getLoadByPanel } from "@/lib/device-data";
+import { DEMO_MODE } from "@/lib/demo-mode";
 import { generateProfileForRange } from "@/lib/mock-data";
 import { useEMSData } from "@/lib/use-ems-data";
 import type { TimeSeriesPoint } from "@/lib/types";
@@ -31,10 +32,10 @@ function todayString() {
 export default function OverviewPage() {
   const { devices, summary, loading, error, isDemo } = useEMSData();
   const [profile, setProfile] = useState<TimeSeriesPoint[]>(() =>
-    generateProfileForRange(todayString(), todayString()),
+    DEMO_MODE ? generateProfileForRange(todayString(), todayString()) : [],
   );
   const [readingsError, setReadingsError] = useState<string | null>(null);
-  const [profileIsDemo, setProfileIsDemo] = useState(true);
+  const [profileIsDemo, setProfileIsDemo] = useState(DEMO_MODE);
 
   useEffect(() => {
     const start = new Date();
@@ -49,7 +50,7 @@ export default function OverviewPage() {
       })
         .then((points) => {
           if (active) {
-            if (points.length === 0) {
+            if (points.length === 0 && DEMO_MODE) {
               setProfile(generateProfileForRange(todayString(), todayString()));
               setProfileIsDemo(true);
               setReadingsError("Belum ada histori di backend.");
@@ -62,8 +63,10 @@ export default function OverviewPage() {
         })
         .catch((cause: unknown) => {
           if (active) {
-            setProfile(generateProfileForRange(todayString(), todayString()));
-            setProfileIsDemo(true);
+            setProfile(
+              DEMO_MODE ? generateProfileForRange(todayString(), todayString()) : [],
+            );
+            setProfileIsDemo(DEMO_MODE);
             setReadingsError(
               cause instanceof Error ? cause.message : "Gagal memuat grafik.",
             );

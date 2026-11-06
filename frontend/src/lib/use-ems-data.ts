@@ -2,15 +2,27 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getDevices, getRealtimeUrl, getSummary, type Summary } from "@/lib/api";
+import { DEMO_MODE } from "@/lib/demo-mode";
 import { DEVICES, getTotals } from "@/lib/mock-data";
 import type { Device } from "@/lib/types";
 
+const EMPTY_SUMMARY: Summary = {
+  totalPower: 0,
+  totalApparentPower: 0,
+  totalReactivePower: 0,
+  energyToday: 0,
+  online: 0,
+  warning: 0,
+  offline: 0,
+  total: 0,
+};
+
 export function useEMSData() {
-  const [devices, setDevices] = useState<Device[]>(DEVICES);
-  const [summary, setSummary] = useState<Summary>(getTotals());
+  const [devices, setDevices] = useState<Device[]>(DEMO_MODE ? DEVICES : []);
+  const [summary, setSummary] = useState<Summary>(DEMO_MODE ? getTotals() : EMPTY_SUMMARY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isDemo, setIsDemo] = useState(true);
+  const [isDemo, setIsDemo] = useState(DEMO_MODE);
   const [realtime, setRealtime] = useState(false);
   const lastRealtimeRefresh = useRef(0);
 
@@ -25,10 +37,17 @@ export function useEMSData() {
         nextSummary.total === 0 ||
         nextDevices.every((device) => !device.lastSeen)
       ) {
-        setDevices(DEVICES);
-        setSummary(getTotals());
-        setIsDemo(true);
-        setError("Backend belum memiliki data meter. Menampilkan data simulasi.");
+        if (DEMO_MODE) {
+          setDevices(DEVICES);
+          setSummary(getTotals());
+          setIsDemo(true);
+          setError("Backend belum memiliki data meter. Menampilkan data simulasi.");
+          return;
+        }
+        setDevices(nextDevices);
+        setSummary(nextSummary);
+        setIsDemo(false);
+        setError("Backend belum memiliki data meter.");
         return;
       }
       setDevices(nextDevices);
@@ -36,9 +55,15 @@ export function useEMSData() {
       setIsDemo(false);
       setError(null);
     } catch (cause) {
-      setDevices(DEVICES);
-      setSummary(getTotals());
-      setIsDemo(true);
+      if (DEMO_MODE) {
+        setDevices(DEVICES);
+        setSummary(getTotals());
+        setIsDemo(true);
+      } else {
+        setDevices([]);
+        setSummary(EMPTY_SUMMARY);
+        setIsDemo(false);
+      }
       setError(cause instanceof Error ? cause.message : "Gagal memuat data EMS.");
     } finally {
       setLoading(false);

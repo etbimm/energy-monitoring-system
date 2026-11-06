@@ -9,6 +9,30 @@ from app.models import Alarm, Device
 from app.services.realtime import hub
 
 NOMINAL_HZ = 50.0
+SQRT3 = 3 ** 0.5
+
+# Batas tegangan antar-fasa (L-L, nominal 400 V).
+VOLTAGE_LL_WARNING = (385.0, 415.0)
+VOLTAGE_LL_CRITICAL = (350.0, 440.0)
+# Batas fasa-netral (L-N, nominal 230 V) = batas L-L dibagi sqrt(3).
+VOLTAGE_LN_WARNING = tuple(round(v / SQRT3, 1) for v in VOLTAGE_LL_WARNING)
+VOLTAGE_LN_CRITICAL = tuple(round(v / SQRT3, 1) for v in VOLTAGE_LL_CRITICAL)
+
+
+def _voltage_basis(payload: dict) -> tuple[float, str, tuple[float, float], tuple[float, float]] | None:
+    """Pilih tegangan yang benar-benar diukur meter beserta batasnya.
+
+    Prioritas: L-N terukur, lalu L-L terukur, lalu `voltage` (selalu L-L).
+    """
+    ln = payload.get("voltage_ln")
+    if ln is not None and ln > 0:
+        return ln, "L-N", VOLTAGE_LN_WARNING, VOLTAGE_LN_CRITICAL
+    ll = payload.get("voltage_ll")
+    if ll is None:
+        ll = payload.get("voltage")
+    if ll is not None and ll > 0:
+        return ll, "L-L", VOLTAGE_LL_WARNING, VOLTAGE_LL_CRITICAL
+    return None
 
 
 def _now() -> datetime:
@@ -19,7 +43,7 @@ def evaluate_conditions(payload: dict, device: Device) -> list[tuple[str, str, s
     """Kembalikan list (alarm_type, severity, message) yang sedang aktif."""
     found: list[tuple[str, str, str]] = []
     pf = payload.get("power_factor")
-    voltage = payload.get("voltage")
+    voltage_basis = _voltage_basis(payload)
     freq = payload.get("frequency")
     thd_i = payload.get("thd_current")
     unbalance_v = payload.get("unbalance_voltage")
@@ -31,11 +55,12 @@ def evaluate_conditions(payload: dict, device: Device) -> list[tuple[str, str, s
         elif pf < 0.90:
             found.append(("power_factor", "warning", f"Power factor rendah ({pf:.3f})"))
 
-    if voltage is not None and voltage > 0:
-        if voltage < 350 or voltage > 440:
-            found.append(("voltage", "critical", f"Tegangan di luar batas kritis ({voltage:.1f} V)"))
-        elif voltage < 385 or voltage > 415:
-            found.append(("voltage", "warning", f"Tegangan di luar rentang normal ({voltage:.1f} V)"))
+    if voltage_basis is not None:
+        value, kind, (warn_lo, warn_hi), (crit_lo, crit_hi) = voltage_basis
+        if value < crit_lo or value > crit_hi:
+            found.append(("voltage", "critical", f"Tegangan {kind} di luar batas kritis ({value:.1f} V)"))
+        elif value < warn_lo or value > warn_hi:
+            found.append(("voltage", "warning", f"Tegangan {kind} di luar rentang normal ({value:.1f} V)"))
 
     if freq is not None and freq > 0:
         deviation = abs(freq - NOMINAL_HZ)
