@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
 
+    # Endpoint debug /internal/ingest nonaktif bila kosong. Bila diisi,
+    # request wajib membawa header `X-API-Key` dengan nilai ini.
+    ingest_api_key: str | None = None
+
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     poll_interval: int = 5
@@ -27,10 +31,15 @@ class Settings(BaseSettings):
     # Zona waktu lokal pabrik untuk batas "hari ini" dan bucket harian.
     timezone: str = "Asia/Jakarta"
 
+    # Alarm baru aktif bila kondisi abnormal bertahan >= on_delay, dan baru
+    # normal bila kondisi normal (di luar deadband) bertahan >= off_delay.
+    alarm_on_delay_seconds: int = 30
+    alarm_off_delay_seconds: int = 30
+
     offline_warning_seconds: int = 30
     offline_critical_seconds: int = 180
 
-    @field_validator("mqtt_username", "mqtt_password", mode="before")
+    @field_validator("mqtt_username", "mqtt_password", "ingest_api_key", mode="before")
     @classmethod
     def empty_to_none(cls, value: str | None) -> str | None:
         if value == "":

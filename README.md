@@ -36,7 +36,7 @@ docker compose up --build
 |---|---|
 | API + Swagger | http://localhost:4000/docs |
 | PostgreSQL | localhost:5432 (user/db `ems`) |
-| MQTT | localhost:1883 |
+| MQTT | localhost:1883 (wajib login: `MQTT_USERNAME`/`MQTT_PASSWORD`, default `ems`/`ems-mqtt`) |
 
 Mode akuisisi default: `simulator` (tanpa hardware). Set `ACQUISITION_MODE=modbus` di `.env` untuk poll meter sungguhan.
 

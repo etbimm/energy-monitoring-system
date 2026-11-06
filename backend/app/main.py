@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import Depends, FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
@@ -111,7 +112,16 @@ async def capture_api_errors(request: Request, call_next):
     return response
 
 
-@app.post("/internal/ingest")
+def require_ingest_key(x_api_key: str | None = Header(default=None)) -> None:
+    """Lindungi /internal/ingest: data masuk normalnya hanya lewat MQTT."""
+    expected = settings.ingest_api_key
+    if not expected:
+        raise HTTPException(status_code=404, detail="Not Found")
+    if not x_api_key or not hmac.compare_digest(x_api_key, expected):
+        raise HTTPException(status_code=401, detail="API key tidak valid")
+
+
+@app.post("/internal/ingest", dependencies=[Depends(require_ingest_key)], include_in_schema=False)
 async def ingest(payload: TelemetryIn, session: AsyncSession = Depends(get_session)) -> dict:
     result = await ingest_telemetry(session, payload.model_dump())
     if result is None:

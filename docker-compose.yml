@@ -1,6 +1,6 @@
 services:
   db:
-    image: timescale/timescaledb:latest-pg16
+    image: timescale/timescaledb:2.31.0-pg16
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-ems}
@@ -18,14 +18,30 @@ services:
       retries: 10
 
   mqtt:
-    image: eclipse-mosquitto:2
+    image: eclipse-mosquitto:2.1.2-alpine
     restart: unless-stopped
+    environment:
+      MQTT_USERNAME: ${MQTT_USERNAME:-ems}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-ems-mqtt}
+    # Buat file password dari env setiap start, lalu jalankan broker.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        mosquitto_passwd -b -c /mosquitto/passwd "$$MQTT_USERNAME" "$$MQTT_PASSWORD"
+        chown mosquitto:mosquitto /mosquitto/passwd
+        chmod 0700 /mosquitto/passwd
+        exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
     ports:
       - "${MQTT_PORT:-1883}:1883"
-      - "9001:9001"
     volumes:
       - ./mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - ems_mosquitto:/mosquitto/data
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h localhost -u \"$$MQTT_USERNAME\" -P \"$$MQTT_PASSWORD\" -t '$$SYS/broker/uptime' -C 1 -W 3"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend:
     build: ./backend
@@ -34,19 +50,21 @@ services:
       db:
         condition: service_healthy
       mqtt:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "${BACKEND_PORT:-4000}:4000"
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ems}:${POSTGRES_PASSWORD:-ems}@db:5432/${POSTGRES_DB:-ems}
       MQTT_HOST: mqtt
       MQTT_PORT: 1883
-      MQTT_USERNAME: ${MQTT_USERNAME:-}
-      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      MQTT_USERNAME: ${MQTT_USERNAME:-ems}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-ems-mqtt}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       POLL_INTERVAL: ${POLL_INTERVAL:-5}
+      INGEST_API_KEY: ${INGEST_API_KEY:-}
+      TIMEZONE: ${TIMEZONE:-Asia/Jakarta}
 
   acquisition:
     build: ./backend
@@ -56,18 +74,19 @@ services:
       db:
         condition: service_healthy
       mqtt:
-        condition: service_started
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ems}:${POSTGRES_PASSWORD:-ems}@db:5432/${POSTGRES_DB:-ems}
       MQTT_HOST: mqtt
       MQTT_PORT: 1883
-      MQTT_USERNAME: ${MQTT_USERNAME:-}
-      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      MQTT_USERNAME: ${MQTT_USERNAME:-ems}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-ems-mqtt}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       POLL_INTERVAL: ${POLL_INTERVAL:-5}
       ACQUISITION_MODE: ${ACQUISITION_MODE:-simulator}
       MODBUS_TIMEOUT: ${MODBUS_TIMEOUT:-2}
+      TIMEZONE: ${TIMEZONE:-Asia/Jakarta}
 
 volumes:
   ems_pgdata:

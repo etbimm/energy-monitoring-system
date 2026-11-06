@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Device, PhaseReading, Reading
-from app.services.alarms import apply_alarms, clear_offline_alarm
+from app.services.alarms import apply_alarms, clear_offline_alarm, send_alarm_notices
 from app.services.derive import apply_derived
 from app.services.error_reporting import resolve_error
 from app.services.realtime import device_status, hub
@@ -77,8 +77,9 @@ async def ingest_telemetry(session: AsyncSession, payload: dict) -> dict | None:
 
     device.last_seen_at = ts
     await clear_offline_alarm(session, device.id)
-    await apply_alarms(session, device, payload)
+    _, notices = await apply_alarms(session, device, payload, now=ts)
     await session.commit()
+    await send_alarm_notices(notices)
 
     await resolve_error(f"meter:{code}", f"Power meter {code} kembali mengirim data.")
     snapshot = {**payload, "status": device_status(ts)}

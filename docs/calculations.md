@@ -116,6 +116,29 @@ tegangan yang benar-benar diukur meter: `voltage_ln` bila ada, lalu
 `voltage_ll`, lalu `voltage` (dianggap L-L) untuk payload lama. Pesan alarm
 menyebut jenis tegangannya (L-N atau L-L).
 
+### Delay dan hysteresis alarm
+
+Implementasi `apply_alarms` di
+[`backend/app/services/alarms.py`](../backend/app/services/alarms.py), berlaku
+untuk telemetry produksi maupun simulator (alarm `offline` dikelola terpisah):
+
+- **Delay aktif:** alarm baru dibuat bila kondisi abnormal (ambang di atas)
+  terdeteksi terus-menerus selama `waktu_sekarang - waktu_pertama_abnormal >=
+  ALARM_ON_DELAY_SECONDS` (default 30 detik). Kondisi yang hilang sebelum itu
+  diabaikan. Waktu yang dipakai adalah timestamp telemetry.
+- **Deadband:** alarm yang sudah aktif dievaluasi dengan ambang yang digeser ke
+  arah normal: PF `+0.01`; tegangan L-L `±4 V`, L-N `±2.3 V` (1% nominal);
+  deviasi frekuensi `-0.1 Hz`; THD-I `-0.5` poin; unbalance V `-0.3` poin;
+  beban `-0.03` (3% kapasitas). Contoh: alarm PF < 0.90 tetap aktif sampai
+  PF ≥ 0.91.
+- **Delay normal:** alarm aktif di-clear bila nilai berada di luar deadband
+  selama `>= ALARM_OFF_DELAY_SECONDS` (default 30 detik).
+- Severity alarm aktif mengikuti evaluasi ambang normal; di zona deadband
+  memakai evaluasi ber-deadband.
+- **Notifikasi Telegram:** alarm berseverity `critical` dikirim sekali
+  (`EMS ALARM KRITIS`); notifikasi pulih (`EMS ALARM PULIH`) dikirim saat alarm
+  di-clear atau turun ke `warning`.
+
 ### Status, threshold UI, dan timeout
 
 - Deviasi frekuensi yang ditampilkan UI: `abs(f - 50 Hz)`. Status warning
@@ -206,7 +229,7 @@ Di [`frontend/src/lib/mock-data.ts`](../frontend/src/lib/mock-data.ts):
 
 ### Seed histori SQL
 
-Di [`database/init/03-seed-history.sql`](../database/init/03-seed-history.sql),
+Di [`scripts/seed-history.sql`](../scripts/seed-history.sql) (dijalankan manual, tidak lagi otomatis),
 data histori sintetis dibangkitkan tiap 15 menit:
 
 - Tegangan `V = 400 + 2.5 × sin(epoch/3000 + device_id)`.

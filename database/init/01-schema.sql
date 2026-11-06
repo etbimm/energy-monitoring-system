@@ -97,6 +97,14 @@ CREATE INDEX IF NOT EXISTS idx_alarms_open
   ON alarms (device_id, alarm_type)
   WHERE cleared_at IS NULL;
 
+-- Status notifikasi Telegram yang masih aktif (anti-duplikat antar proses
+-- backend/acquisition dan antar restart).
+CREATE TABLE IF NOT EXISTS notification_state (
+  key           TEXT PRIMARY KEY,
+  summary       TEXT NOT NULL,
+  active_since  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Agregat 1 menit (grafik shift / laporan harian)
 CREATE MATERIALIZED VIEW IF NOT EXISTS readings_1min
 WITH (timescaledb.continuous) AS

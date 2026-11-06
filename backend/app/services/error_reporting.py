@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from collections.abc import Awaitable, Callable
+from typing import Protocol
 
 import httpx
 
@@ -23,26 +25,128 @@ def _safe_text(value: str, limit: int = 500) -> str:
     return value[:limit]
 
 
+class NotificationStore(Protocol):
+    """Penyimpanan status notifikasi aktif (dibagi antar proses & restart)."""
+
+    async def active(self) -> dict[str, str]: ...
+
+    async def claim(self, key: str, summary: str) -> bool:
+        """True bila key baru tercatat (belum pernah dinotifikasi)."""
+
+    async def release(self, key: str) -> bool:
+        """True bila key aktif dan berhasil dihapus."""
+
+
+class DbNotificationStore:
+    """Status notifikasi di tabel `notification_state`.
+
+    Dengan INSERT ... ON CONFLICT, hanya satu proses (backend/acquisition)
+    yang mengirim notifikasi untuk key yang sama, dan restart service tidak
+    mengirim ulang error yang masih aktif.
+    """
+
+    async def active(self) -> dict[str, str]:
+        from sqlalchemy import text
+
+        from app.db import SessionLocal
+
+        async with SessionLocal() as session:
+            rows = (await session.execute(text("SELECT key, summary FROM notification_state"))).all()
+        return {row.key: row.summary for row in rows}
+
+    async def claim(self, key: str, summary: str) -> bool:
+        from sqlalchemy import text
+
+        from app.db import SessionLocal
+
+        async with SessionLocal() as session:
+            inserted = (
+                await session.execute(
+                    text(
+                        "INSERT INTO notification_state (key, summary) VALUES (:key, :summary) "
+                        "ON CONFLICT (key) DO NOTHING RETURNING key"
+                    ),
+                    {"key": key, "summary": summary},
+                )
+            ).first()
+            await session.commit()
+        return inserted is not None
+
+    async def release(self, key: str) -> bool:
+        from sqlalchemy import text
+
+        from app.db import SessionLocal
+
+        async with SessionLocal() as session:
+            deleted = (
+                await session.execute(
+                    text("DELETE FROM notification_state WHERE key = :key RETURNING key"),
+                    {"key": key},
+                )
+            ).first()
+            await session.commit()
+        return deleted is not None
+
+
+_STORE_TIMEOUT_SECONDS = 3.0
+
+
 class ErrorReporter:
     def __init__(
         self,
         sender: Callable[[str], Awaitable[None]] | None = None,
+        store: NotificationStore | None = None,
     ) -> None:
         self._active: dict[str, str] = {}
+        # Key yang aktif tetapi gagal dicatat di store (mis. database mati);
+        # notifikasi pulihnya tetap dikirim walau store tidak punya catatannya.
+        self._unpersisted: set[str] = set()
         self._sender = sender
+        self._store = store
+        self._loaded = store is None
+
+    async def _store_call(self, coro):
+        return await asyncio.wait_for(coro, _STORE_TIMEOUT_SECONDS)
+
+    async def _ensure_loaded(self) -> None:
+        """Muat error yang masih aktif dari store sekali (setelah restart)."""
+        if self._loaded or self._store is None:
+            return
+        try:
+            stored = await self._store_call(self._store.active())
+        except Exception as exc:
+            log.debug("Gagal memuat status notifikasi (%s)", type(exc).__name__)
+            return
+        for key, summary in stored.items():
+            self._active.setdefault(key, summary)
+        self._loaded = True
 
     async def report(
         self,
         key: str,
         summary: str,
         error: Exception | str | None = None,
+        *,
+        title: str = "EMS ERROR",
     ) -> None:
         safe_summary = _safe_text(summary)
+        await self._ensure_loaded()
         if key in self._active:
             log.debug("Error masih aktif [%s]: %s", key, safe_summary)
             return
 
         self._active[key] = safe_summary
+        if self._store is not None:
+            try:
+                claimed = await self._store_call(self._store.claim(key, safe_summary))
+            except Exception as exc:
+                log.debug("Gagal mencatat status notifikasi (%s)", type(exc).__name__)
+                self._unpersisted.add(key)
+                claimed = True
+            if not claimed:
+                log.debug("Error [%s] sudah dinotifikasi sebelumnya", key)
+                return
+
         detail = ""
         if error is not None:
             detail = _safe_text(
@@ -53,19 +157,38 @@ class ErrorReporter:
             )
         log.error("Error baru [%s]: %s%s", key, safe_summary, f" ({detail})" if detail else "")
 
-        message = f"EMS ERROR\n{safe_summary}"
+        message = f"{title}\n{safe_summary}"
         if detail:
             message += f"\nDetail: {detail}"
         await self._notify(message)
 
-    async def resolve(self, key: str, summary: str | None = None) -> None:
+    async def resolve(
+        self,
+        key: str,
+        summary: str | None = None,
+        *,
+        title: str = "EMS PULIH",
+    ) -> None:
+        await self._ensure_loaded()
         previous = self._active.pop(key, None)
         if previous is None:
             return
 
+        unpersisted = key in self._unpersisted
+        self._unpersisted.discard(key)
+        if self._store is not None:
+            try:
+                released = await self._store_call(self._store.release(key))
+            except Exception as exc:
+                log.debug("Gagal menghapus status notifikasi (%s)", type(exc).__name__)
+                released = True
+            if not released and not unpersisted:
+                # Sudah dipulihkan proses lain; jangan kirim ganda.
+                return
+
         recovery = _safe_text(summary or previous)
         log.info("Error pulih [%s]: %s", key, recovery)
-        await self._notify(f"EMS PULIH\n{recovery}")
+        await self._notify(f"{title}\n{recovery}")
 
     async def _notify(self, message: str) -> None:
         try:
@@ -86,11 +209,22 @@ class ErrorReporter:
                     },
                 )
                 response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            # Kode status + alasan dari Telegram (tanpa URL yang memuat token).
+            try:
+                reason = exc.response.json().get("description", "")
+            except Exception:
+                reason = ""
+            log.warning(
+                "Gagal mengirim notifikasi Telegram (HTTP %s %s)",
+                exc.response.status_code,
+                _safe_text(str(reason), 200),
+            )
         except Exception as exc:
             log.warning("Gagal mengirim notifikasi Telegram (%s)", type(exc).__name__)
 
 
-error_reporter = ErrorReporter()
+error_reporter = ErrorReporter(store=DbNotificationStore())
 
 
 async def report_error(

@@ -38,6 +38,24 @@ async def load_devices(dsn: str) -> list[dict]:
         await conn.close()
 
 
+# Notifikasi Telegram "meter offline" hanya dikirim backend (offline watcher,
+# berdasarkan last_seen_at). Acquisition cukup mencatat log saat status baca
+# meter berubah, agar satu kejadian tidak menghasilkan dua notifikasi.
+_failing_meters: set[str] = set()
+
+
+def _mark_failed(code: str, reason: str) -> None:
+    if code not in _failing_meters:
+        _failing_meters.add(code)
+        log.warning("Power meter %s %s", code, reason)
+
+
+def _mark_ok(code: str) -> None:
+    if code in _failing_meters:
+        _failing_meters.discard(code)
+        log.info("Power meter %s kembali terbaca", code)
+
+
 async def publish(client, topic: str, payload: dict) -> None:
     await client.publish(topic, json.dumps(payload), qos=1)
 
@@ -85,7 +103,6 @@ async def run() -> None:
 
                     for device in devices:
                         code = device["device_code"]
-                        error_key = f"acquisition:meter:{code}"
                         caps = device["capabilities"] or {}
                         if isinstance(caps, str):
                             caps = json.loads(caps)
@@ -112,19 +129,11 @@ async def run() -> None:
                                 )
                             if payload is None:
                                 await publish(mqtt, topic_status, {"device_code": code, "status": "offline"})
-                                if settings.acquisition_mode == "modbus":
-                                    await report_error(
-                                        error_key,
-                                        f"Power meter {code} tidak mengirim telemetry.",
-                                    )
+                                _mark_failed(code, "tidak mengirim telemetry")
                                 continue
                             await publish(mqtt, topic_tele, payload)
                             await publish(mqtt, topic_status, {"device_code": code, "status": "online"})
-                            if settings.acquisition_mode == "modbus":
-                                await resolve_error(
-                                    error_key,
-                                    f"Power meter {code} kembali mengirim telemetry.",
-                                )
+                            _mark_ok(code)
                         except Exception as exc:
                             await publish(
                                 mqtt,
@@ -135,11 +144,7 @@ async def run() -> None:
                                     "error": type(exc).__name__,
                                 },
                             )
-                            await report_error(
-                                error_key,
-                                f"Gagal membaca power meter {code}.",
-                                exc,
-                            )
+                            _mark_failed(code, f"gagal dibaca ({type(exc).__name__}: {exc})")
                     await asyncio.sleep(settings.poll_interval)
         except aiomqtt.MqttError as exc:
             await report_error("mqtt:acquisition", "Koneksi MQTT acquisition terputus.", exc)

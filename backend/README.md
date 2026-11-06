@@ -23,7 +23,8 @@ backend/
 |  `- schemas.py           kontrak JSON (camelCase)
 |- tests/
 |- Dockerfile
-`- requirements.txt
+|- requirements.txt       dependency runtime (versi dikunci)
+`- requirements-dev.txt   + pytest (tidak masuk image)
 ```
 
 ## Endpoint
@@ -38,7 +39,7 @@ GET  /api/summary/today
 GET  /api/alarms
 POST /api/alarms/{id}/acknowledge
 WS   /ws
-POST /internal/ingest          # debug tanpa MQTT
+POST /internal/ingest          # debug tanpa MQTT; nonaktif kecuali INGEST_API_KEY diisi (header X-API-Key)
 ```
 
 `bucket`: `raw` | `1m` | `5m` | `15m` | `1h` | `1d`
@@ -66,13 +67,12 @@ ACQUISITION_MODE=modbus docker compose up --build
 
 Sesuaikan `modbus_host` / `modbus_address` di tabel `devices`.
 
-Database demo diisi histori simulasi selama 30 hari dengan interval 15 menit,
-termasuk pembacaan per fasa. Skrip ini berjalan otomatis saat volume database
-pertama kali dibuat. Untuk mengisi atau memperbarui histori pada database yang
-sudah ada, jalankan dari root repository:
+Histori simulasi 30 hari (interval 15 menit, termasuk per fasa) **tidak lagi
+dimuat otomatis** agar tidak tercampur dengan data meter asli. Untuk mengisinya
+secara manual pada database pengembangan, jalankan dari root repository:
 
-```powershell
-docker compose exec db psql -U ems -d ems -v ON_ERROR_STOP=1 -f /docker-entrypoint-initdb.d/03-seed-history.sql
+```bash
+docker compose exec -T db psql -U ems -d ems -v ON_ERROR_STOP=1 < scripts/seed-history.sql
 docker compose up --build -d acquisition
 ```
 
@@ -86,12 +86,14 @@ perintah jika nama user/database di `.env` berbeda.
 cd backend
 python -m venv .venv
 .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --port 4000
 python -m app.acquisition
 ```
 
-Database dan Mosquitto tetap lewat `docker compose up db mqtt`.
+Database dan Mosquitto tetap lewat `docker compose up db mqtt`. Broker MQTT
+wajib login, jadi set `MQTT_USERNAME` dan `MQTT_PASSWORD` (default compose:
+`ems` / `ems-mqtt`; ganti di `.env`).
 
 ## Error log dan notifikasi Telegram
 
@@ -115,14 +117,28 @@ Telegram bersifat opsional; tanpa kredensial, pencatatan log tetap aktif.
    docker compose logs -f backend acquisition
    ```
 
+Aturan notifikasi:
+
+- **Meter offline** hanya dilaporkan oleh backend (berdasarkan data terakhir
+  > 3 menit). Acquisition hanya mencatat log, sehingga satu kejadian = satu pesan.
+- **Alarm kelistrikan critical** (PF, tegangan, frekuensi, THD, unbalance,
+  beban) dikirim dengan judul `EMS ALARM KRITIS`, dan `EMS ALARM PULIH` saat
+  alarm normal kembali atau turun ke warning. Alarm warning tidak dikirim.
+- Status notifikasi aktif disimpan di tabel `notification_state`, sehingga
+  restart service tidak mengirim ulang error yang sama.
+- Alarm baru aktif bila kondisi bertahan `ALARM_ON_DELAY_SECONDS` (default 30)
+  dan baru normal bila nilai keluar dari deadband selama
+  `ALARM_OFF_DELAY_SECONDS` (default 30).
+
 Peringatan koneksi dari browser dikirim best-effort. Jika backend sepenuhnya
 tidak dapat dijangkau, browser tidak bisa meneruskan error ke Telegram; error
 tersebut tetap terlihat di console browser. Kegagalan proses/container yang
 berhenti total juga memerlukan pemantau eksternal untuk memberi notifikasi.
 
-## Tes decoder
+## Tes
 
 ```bash
 cd backend
+pip install -r requirements-dev.txt
 pytest
 ```
