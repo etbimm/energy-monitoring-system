@@ -1,5 +1,6 @@
 import pytest
 
+from app.acquisition import simulator
 from app.services import error_reporting
 
 
@@ -16,3 +17,11 @@ def isolated_error_reporter(monkeypatch):
 
     monkeypatch.setattr(error_reporting, "error_reporter", error_reporting.ErrorReporter(sender=record))
     return sent
+
+
+@pytest.fixture(autouse=True)
+def fresh_simulator_counters():
+    """Counter energi simulator tidak boleh terbawa antar tes."""
+    simulator.reset_counters()
+    yield
+    simulator.reset_counters()

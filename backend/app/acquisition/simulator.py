@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import random
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from app.acquisition.normalize import to_telemetry
@@ -13,7 +14,74 @@ VOLTAGE_KEYS = (
     "voltage_l12", "voltage_l23", "voltage_l31",
 )
 SQRT3 = math.sqrt(3)
-ENERGY_EPOCH = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+
+@dataclass
+class CounterState:
+    """Counter energi simulasi terakhir per meter (seperti register meter asli)."""
+
+    time: datetime
+    energy_active: float  # kWh
+    energy_reactive: float  # kVARh
+    power: float  # kW pada `time`
+    reactive_power: float  # kVAR pada `time`
+
+
+_counters: dict[str, CounterState] = {}
+
+
+def prime_counter(
+    device_code: str,
+    time: datetime | None,
+    energy_active: float | None,
+    energy_reactive: float | None,
+    power: float | None,
+    reactive_power: float | None,
+) -> None:
+    """Lanjutkan counter dari pembacaan terakhir di database (saat acquisition start).
+
+    Tanpa ini, restart acquisition membuat counter mulai ulang dari nilai awal.
+    Hanya mengisi meter yang belum punya state.
+    """
+    if device_code in _counters or time is None or energy_active is None:
+        return
+    if time.tzinfo is None:
+        time = time.replace(tzinfo=timezone.utc)
+    _counters[device_code] = CounterState(
+        time=time,
+        energy_active=float(energy_active),
+        energy_reactive=float(energy_reactive if energy_reactive is not None else energy_active * 0.4),
+        power=float(power or 0.0),
+        reactive_power=float(reactive_power or 0.0),
+    )
+
+
+def reset_counters() -> None:
+    _counters.clear()
+
+
+def _advance_counter(device_code: str, spec: dict, now: datetime, power: float, reactive: float) -> CounterState:
+    """Integrasi daya ke energi: kWh += (P_sebelumnya + P_sekarang) / 2 x Δt (jam).
+
+    Sama dengan cara meter asli menghitung energi, sehingga kWh selalu sesuai
+    dengan kW yang ditampilkan. Nilai awal (belum ada state) = energi awal spec.
+    """
+    previous = _counters.get(device_code)
+    if previous is None:
+        state = CounterState(now, spec["energy"], spec["energy"] * 0.4, power, reactive)
+    elif now <= previous.time:
+        state = previous  # jam mundur / duplikat: counter tidak berubah
+    else:
+        hours = (now - previous.time).total_seconds() / 3600
+        state = CounterState(
+            time=now,
+            energy_active=previous.energy_active + (previous.power + power) / 2 * hours,
+            energy_reactive=previous.energy_reactive + (previous.reactive_power + reactive) / 2 * hours,
+            power=power,
+            reactive_power=reactive,
+        )
+    _counters[device_code] = state
+    return state
 
 
 def _model_register_keys(model: str | None) -> set[str] | None:
@@ -81,9 +149,7 @@ def simulate_decoded(
     voltage = 400 + (random.random() - 0.5) * 4
     voltage_ln = voltage / SQRT3
     current = apparent * 1000 / (SQRT3 * voltage) if voltage else 0.0
-    # Titik awal tetap agar counter kWh selalu naik (monoton) seperti meter asli.
-    elapsed_days = (now - ENERGY_EPOCH).total_seconds() / 86400
-    energy = spec["energy"] + spec["power"] * 0.59 * elapsed_days
+    counter = _advance_counter(device_code, spec, now, round(power, 3), round(reactive, 3))
 
     decoded = {
         "voltage_l1": round(voltage_ln + 0.2, 3),
@@ -99,8 +165,8 @@ def simulate_decoded(
         "apparent_power": round(apparent, 3),
         "reactive_power": round(reactive, 3),
         "frequency": round(50 + (random.random() - 0.5) * 0.06, 3),
-        "energy_active": round(energy, 3),
-        "energy_reactive": round(energy * 0.4, 3),
+        "energy_active": round(counter.energy_active, 3),
+        "energy_reactive": round(counter.energy_reactive, 3),
     }
     if capabilities.get("thdCurrent") and "thd_i" in spec:
         decoded["thd_current_l1"] = spec["thd_i"]

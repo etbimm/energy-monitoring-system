@@ -219,6 +219,23 @@ DEVICE_MODEL: dict[str, str] = {
 }
 
 
+def register_capabilities(model: str) -> dict[str, bool]:
+    """Kapabilitas THD yang diturunkan dari register profil meter.
+
+    Satu-satunya sumber aturan "model X punya/tidak punya THD": bila register
+    THD dipoll di profil, kapabilitasnya True. Model tak dikenal -> {} (tidak
+    menimpa kapabilitas dari database).
+    """
+    profile = PROFILES.get(model)
+    if profile is None:
+        return {}
+    keys = {register.key for register in profile.registers if register.poll}
+    return {
+        "thdCurrent": any(key.startswith("thd_current") for key in keys),
+        "thdVoltage": any(key.startswith("thd_voltage") for key in keys),
+    }
+
+
 def get_profile(model: str) -> MeterProfile:
     try:
         return PROFILES[model]

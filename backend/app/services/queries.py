@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.models import Alarm, Device, PhaseReading, Reading
+from app.acquisition.profiles import register_capabilities
 from app.config import get_settings
 from app.schemas import (
     AlarmOut,
@@ -37,12 +38,13 @@ READINGS_1MIN = table(
 
 
 def _caps(raw: dict | None, model: str) -> MeterCapabilities:
-    data = raw or {}
+    # Kapabilitas THD diturunkan dari profil register meter (profiles.py).
+    data = {**(raw or {}), **register_capabilities(model)}
     return MeterCapabilities(
         per_phase=data.get("perPhase", True),
         apparent_energy_register=data.get("apparentEnergyRegister", False),
-        thd_current=True,
-        thd_voltage=model != "WEIDMULLER EM220",
+        thd_current=data.get("thdCurrent", False),
+        thd_voltage=data.get("thdVoltage", False),
         max_harmonic_order=data.get("maxHarmonicOrder", 0),
         unbalance=data.get("unbalance", False),
         reactive_energy=data.get("reactiveEnergy", True),

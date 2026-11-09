@@ -12,9 +12,9 @@ import aiomqtt
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app.acquisition.poller import GatewayConnection
-from app.acquisition.profiles import get_profile
+from app.acquisition.profiles import get_profile, register_capabilities
 from app.acquisition.scheduling import group_by_gateway, next_deadline
-from app.acquisition.simulator import simulate_telemetry
+from app.acquisition.simulator import prime_counter, simulate_telemetry
 from app.config import get_settings
 from app.services.error_reporting import report_error, resolve_error
 
@@ -29,11 +29,21 @@ async def load_devices(dsn: str) -> list[dict]:
     try:
         rows = await conn.fetch(
             """
-            SELECT device_code, model, modbus_host, modbus_port, modbus_address,
-                   capabilities, is_active
-            FROM devices
-            WHERE is_active = TRUE
-            ORDER BY id
+            SELECT d.device_code, d.model, d.modbus_host, d.modbus_port, d.modbus_address,
+                   d.capabilities, d.is_active,
+                   r.time AS last_time, r.energy_active AS last_energy_active,
+                   r.energy_reactive AS last_energy_reactive, r.power AS last_power,
+                   r.reactive_power AS last_reactive_power
+            FROM devices d
+            LEFT JOIN LATERAL (
+                SELECT time, energy_active, energy_reactive, power, reactive_power
+                FROM readings
+                WHERE device_id = d.id
+                ORDER BY time DESC
+                LIMIT 1
+            ) r ON TRUE
+            WHERE d.is_active = TRUE
+            ORDER BY d.id
             """
         )
         return [dict(row) for row in rows]
@@ -71,11 +81,8 @@ def _capabilities(device: dict) -> dict:
     caps = device["capabilities"] or {}
     if isinstance(caps, str):
         caps = json.loads(caps)
-    return {
-        **caps,
-        "thdCurrent": True,
-        "thdVoltage": device["model"] != "WEIDMULLER EM220",
-    }
+    # Kapabilitas THD diturunkan dari profil register meter (profiles.py).
+    return {**caps, **register_capabilities(device["model"])}
 
 
 async def poll_one(mqtt, device: dict, gateway: GatewayConnection | None) -> None:
@@ -138,6 +145,17 @@ class Poller:
         try:
             self.devices = await load_devices(self.settings.database_url)
             self.loaded_at = loop.time()
+            if self.simulator:
+                # Counter simulasi melanjutkan nilai terakhir yang tersimpan.
+                for device in self.devices:
+                    prime_counter(
+                        device["device_code"],
+                        device.get("last_time"),
+                        device.get("last_energy_active"),
+                        device.get("last_energy_reactive"),
+                        device.get("last_power"),
+                        device.get("last_reactive_power"),
+                    )
             await resolve_error("database:acquisition", "Database kembali dapat diakses oleh acquisition.")
         except Exception as exc:
             await report_error(

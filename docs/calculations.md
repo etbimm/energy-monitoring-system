@@ -75,8 +75,8 @@ dipakai, sesuai prinsip "nilai turunan = sumber kebenaran tunggal".
 | Batas bucket harian | Bucket `1d` memakai `time_bucket('1 day', time, 'Asia/Jakarta')` sehingga satu hari = 00:00–24:00 WIB. Bucket lain memakai `time_bucket` biasa. Label titik (`HH:MM`) ditampilkan dalam waktu lokal. | `_bucket_expr` dan `_point` di [`backend/app/services/queries.py`](../backend/app/services/queries.py). |
 | Rata-rata dalam bucket per meter | P, S, Q, V, I, f, dan THD-I memakai `AVG` (atas nilai per menit `readings_1min`); energi memakai nilai terakhir (`last`) pada bucket; PF per meter di bucket = `AVG(P) / AVG(S)` (PF dari agregat tidak dipakai). | Subquery bucket per meter di [`backend/app/services/queries.py`](../backend/app/services/queries.py). |
 | Gabungan meter di bucket | P, S, Q, dan energi per-meter dijumlahkan; V, I, f, dan THD-I antar-meter dirata-ratakan; PF gabungan = `Σ AVG(P per meter) / Σ AVG(S per meter)`. | Query akhir bucket di [`backend/app/services/queries.py`](../backend/app/services/queries.py). |
-| Continuous aggregate 1 menit dan 15 menit | Daya, V, I, f, dan PF menggunakan `AVG`; THD-I/THD-U juga menggunakan `AVG` di bucket 1 menit. Register energi menggunakan nilai `last` dalam bucket. | View `readings_1min` dan `readings_15min` di [`database/init/01-schema.sql`](../database/init/01-schema.sql). |
-| Rollup energi harian | Hari = `time_bucket('1 day', time, 'Asia/Jakarta')` (00:00 WIB). `energy_kwh = last(kWh) - first(kWh)`; `energy_kvarh = last(kVARh) - first(kVARh)`; daya puncak = `MAX(P)`; PF rata-rata = `AVG(PF)`. | View `daily_energy` di [`database/init/01-schema.sql`](../database/init/01-schema.sql); migrasi DB berjalan di [`database/migrations/001-daily-energy-wib.sql`](../database/migrations/001-daily-energy-wib.sql). |
+| Continuous aggregate 1 menit dan 15 menit | Daya, V, I, f, dan PF menggunakan `AVG`; THD-I/THD-U juga menggunakan `AVG` di bucket 1 menit. Register energi menggunakan nilai `last` dalam bucket. `readings_1min` dipakai API (grafik & total energi); `readings_15min` belum dipakai API dan dicadangkan untuk deteksi losses ([rancangan](./loss-detection-design.md)). | View `readings_1min` dan `readings_15min` di [`database/init/01-schema.sql`](../database/init/01-schema.sql). |
+| Rollup energi harian | Belum dipakai API; dicadangkan untuk laporan harian/penalti PF. Hari = `time_bucket('1 day', time, 'Asia/Jakarta')` (00:00 WIB). `energy_kwh = last(kWh) - first(kWh)`; `energy_kvarh = last(kVARh) - first(kVARh)`; daya puncak = `MAX(P)`; PF rata-rata = `AVG(PF)`. | View `daily_energy` di [`database/init/01-schema.sql`](../database/init/01-schema.sql); migrasi DB berjalan di [`database/migrations/001-daily-energy-wib.sql`](../database/migrations/001-daily-energy-wib.sql). |
 | Peringkat severity alarm perangkat | Critical dipetakan ke 2, warning ke 1, lainnya ke 0; perangkat memakai nilai maksimum severity alarm yang masih terbuka. | `_severity_rank` di [`backend/app/services/queries.py`](../backend/app/services/queries.py). |
 
 ### Frontend
@@ -183,10 +183,14 @@ Di [`backend/app/acquisition/simulator.py`](../backend/app/acquisition/simulator
   Simulator hanya mengirim register tegangan yang dimiliki model meter
   (PAC3220: L-L saja; model lain: L-N saja), sesuai `PROFILES`.
 - Arus perkiraan tiga fasa `I = S × 1000 / (sqrt(3) × V_LL)` (atau 0 jika V nol).
-- Energi aktif simulasi `E = energi_awal + daya_nominal × 0.59 × elapsed_days`,
-  dengan `elapsed_days` dihitung dari titik tetap `2026-01-01 00:00 UTC` agar
-  counter selalu naik (monoton) seperti meter asli; energi reaktif simulasi
-  `kVARh = E × 0.4`.
+- Counter energi diintegrasikan dari daya, seperti meter asli:
+  `kWh_n = kWh_(n-1) + (P_(n-1) + P_n) / 2 × Δt_jam` dan
+  `kVARh_n = kVARh_(n-1) + (Q_(n-1) + Q_n) / 2 × Δt_jam` (P/Q yang dikirim,
+  dibulatkan 3 desimal). Akibatnya kWh per jam = rata-rata kW jam itu.
+  Nilai awal tanpa riwayat: `kWh = energi_awal`, `kVARh = energi_awal × 0.4`.
+  Saat acquisition start, counter melanjutkan pembacaan terakhir di database
+  (`prime_counter`), sehingga restart tidak membuat counter mulai ulang.
+  Bila jam mundur/duplikat (`now ≤ waktu terakhir`), counter tidak berubah.
 - Frekuensi `f = 50 + (random - 0.5) × 0.06`.
 - Nilai arus per fasa disintesis sebagai `I × 0.34`, `I × 0.33`, `I × 0.33`;
   tegangan fasa ditambah offset kecil dari tegangan dasar.
@@ -243,17 +247,17 @@ data histori sintetis dibangkitkan tiap 15 menit:
 - Load factor = load berdasarkan jam × faktor hari (Sabtu `0.78`, Minggu `0.62`,
   hari lain `1.0`) × variasi `1 + 0.08 × sin(epoch/7200 + device_id)`.
 - PF = `clamp(base_PF + 0.015 × sin(epoch/3600 + device_id), 0.85, 0.99)`.
-- Energi aktif = `energi_awal + daya_nominal × 0.59 × hari_sejak_2026-01-01 00:00 UTC`
-  (titik awal sama dengan simulator, agar counter seed tersambung dengan data live).
 - `P = daya_nominal × load_factor`; `S = P/PF`; `Q = P × tan(acos(PF))`.
-- kVAh dan kVARh diintegrasikan per interval 15 menit:
-  `kVAh = kWh_awal/PF_awal + Σ ΔkWh/PF_rata2` dan
-  `kVARh = kWh_awal × tan(acos(PF_awal)) + Σ ΔkWh × tan(acos(PF_rata2))`,
-  dengan `PF_rata2` = rata-rata PF dua sampel berurutan.
+- Counter diintegrasikan dari daya per interval 15 menit (sama dengan
+  simulator): `kWh = energi_awal + Σ (P_sebelumnya + P) / 2 × 0,25 jam`,
+  `kVARh = energi_awal × 0.4 + Σ (Q_sebelumnya + Q) / 2 × 0,25 jam`, dan
+  `kVAh = energi_awal / PF_awal + Σ ΔkWh / PF_rata2` (`PF_rata2` = rata-rata
+  PF dua sampel berurutan).
 - Perbaikan database dummy yang sudah ada:
   [`scripts/repair-dummy-energy.sql`](../scripts/repair-dummy-energy.sql)
-  menghitung ulang kWh dengan rumus simulator, `kVARh = kWh × 0.4`, dan kVAh
-  dengan integrasi per interval seperti backend.
+  menghitung ulang kWh dan kVARh dengan mengintegrasikan P dan Q yang
+  tersimpan di setiap baris (rumus trapesium yang sama), lalu kVAh dengan
+  integrasi per interval seperti backend.
 - Arus `I = P × 1000 / (sqrt(3) × V × PF)`; frekuensi
   `f = 50 + 0.03 × sin(epoch/1800 + device_id)`.
 - THD-I = `1.5 + 4 × (0.5 + 0.5 × sin(epoch/2400 + device_id))`;

@@ -137,7 +137,9 @@ SELECT add_continuous_aggregate_policy(
   if_not_exists => TRUE
 );
 
--- Agregat 15 menit (grafik mingguan/bulanan)
+-- Agregat 15 menit. Belum dibaca API saat ini (grafik memakai readings_1min);
+-- dicadangkan sebagai sumber delta energi permanen untuk fitur deteksi losses
+-- (docs/loss-detection-design.md). Jangan dihapus.
 CREATE MATERIALIZED VIEW IF NOT EXISTS readings_15min
 WITH (timescaledb.continuous) AS
 SELECT
@@ -167,6 +169,8 @@ SELECT add_continuous_aggregate_policy(
 
 -- Rollup harian: energi = delta kumulatif (bukan SUM(power))
 -- Batas hari mengikuti WIB (00:00 Asia/Jakarta), bukan 00:00 UTC.
+-- Belum dibaca API saat ini; dicadangkan untuk laporan harian/penalti PF dan
+-- acuan batas hari fitur deteksi losses. Jangan dihapus.
 CREATE MATERIALIZED VIEW IF NOT EXISTS daily_energy
 WITH (timescaledb.continuous) AS
 SELECT

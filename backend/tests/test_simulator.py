@@ -1,24 +1,20 @@
-from app.acquisition.profiles import DEVICE_MODEL
+from app.acquisition.profiles import DEVICE_MODEL, register_capabilities
 from app.acquisition.simulator import NOMINAL, simulate_telemetry
 
 
 def test_simulated_online_meters_have_thd_readings():
-    capabilities = {"thdCurrent": True, "thdVoltage": True}
-
     for device_code, model in DEVICE_MODEL.items():
-        meter_capabilities = {
-            **capabilities,
-            "thdVoltage": model != "WEIDMULLER EM220",
-        }
+        meter_capabilities = register_capabilities(model)
         reading = simulate_telemetry(device_code, meter_capabilities)
         if NOMINAL[device_code].get("offline"):
             assert reading is None
             continue
 
         assert reading is not None
-        assert reading["energy_active"] > NOMINAL[device_code]["energy"]
+        # Pembacaan pertama (tanpa state counter) dimulai dari energi awal spec.
+        assert reading["energy_active"] >= NOMINAL[device_code]["energy"]
         assert reading["thd_current"] is not None
-        if model == "WEIDMULLER EM220":
+        if not meter_capabilities["thdVoltage"]:
             assert reading["thd_voltage"] is None
         else:
             assert reading["thd_voltage"] is not None
@@ -78,3 +74,48 @@ def test_load_profile_follows_local_wib_hour(monkeypatch):
     assert power_at(5) == round(nominal * 1.15, 3)
     # 13:00 UTC = 20:00 WIB -> beban malam (0.35)
     assert power_at(13) == round(nominal * 0.35, 3)
+
+
+def _fixed_now(monkeypatch, simulator, moment):
+    from datetime import datetime
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return moment if tz is None else moment.astimezone(tz)
+
+    monkeypatch.setattr(simulator, "datetime", FixedDateTime)
+
+
+def test_energy_counter_integrates_power(monkeypatch):
+    """kWh naik sebesar rata-rata kW x jam, bukan rumus tetap per hari."""
+    from datetime import datetime, timedelta, timezone
+
+    import app.acquisition.simulator as simulator
+
+    monkeypatch.setattr(simulator.random, "random", lambda: 0.5)
+    start = datetime(2026, 11, 9, 5, 0, tzinfo=timezone.utc)  # 12:00 WIB, beban puncak
+    _fixed_now(monkeypatch, simulator, start)
+    first = simulator.simulate_decoded("PM-LVMDP-IN-01", {})
+    _fixed_now(monkeypatch, simulator, start + timedelta(minutes=30))
+    second = simulator.simulate_decoded("PM-LVMDP-IN-01", {})
+
+    expected = (first["power"] + second["power"]) / 2 * 0.5
+    # Toleransi 0,002 karena counter dibulatkan 3 desimal.
+    assert abs((second["energy_active"] - first["energy_active"]) - expected) <= 0.002
+    expected_kvarh = (first["reactive_power"] + second["reactive_power"]) / 2 * 0.5
+    assert abs((second["energy_reactive"] - first["energy_reactive"]) - expected_kvarh) <= 0.002
+
+
+def test_counter_continues_from_database_after_restart(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    import app.acquisition.simulator as simulator
+
+    last = datetime(2026, 11, 9, 5, 0, tzinfo=timezone.utc)
+    simulator.prime_counter("PM-MCC1-01", last, 8000.0, 3200.0, 40.0, 20.0)
+    _fixed_now(monkeypatch, simulator, last + timedelta(seconds=5))
+    reading = simulator.simulate_decoded("PM-MCC1-01", {})
+    # Lanjut dari 8000 kWh, bukan mulai ulang dari energi awal spec.
+    assert 8000.0 < reading["energy_active"] < 8000.2
+    assert 3200.0 < reading["energy_reactive"] < 3200.2

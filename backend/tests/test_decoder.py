@@ -119,3 +119,11 @@ def test_register_blocks_split_gaps():
     addresses = [start for start, _ in blocks]
     assert 0 in addresses
     assert 40 in addresses
+
+
+def test_capabilities_follow_profile_registers():
+    from app.acquisition.profiles import register_capabilities
+
+    assert register_capabilities("WEIDMULLER EM220") == {"thdCurrent": True, "thdVoltage": False}
+    assert register_capabilities("SIEMENS PAC3220") == {"thdCurrent": True, "thdVoltage": True}
+    assert register_capabilities("MODEL TIDAK DIKENAL") == {}

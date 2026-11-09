@@ -9,6 +9,9 @@ from fastapi import WebSocket
 
 from app.config import get_settings
 
+# Batas waktu kirim per klien WebSocket (detik).
+SEND_TIMEOUT_SECONDS = 2.0
+
 
 class Hub:
     def __init__(self) -> None:
@@ -27,16 +30,36 @@ class Hub:
     def remember(self, device_code: str, payload: dict[str, Any]) -> None:
         self.latest[device_code] = payload
 
+    async def _send(self, ws: WebSocket, data: str) -> bool:
+        try:
+            await asyncio.wait_for(ws.send_text(data), SEND_TIMEOUT_SECONDS)
+            return True
+        except Exception:
+            return False
+
     async def broadcast(self, message: dict[str, Any]) -> None:
-        dead: list[WebSocket] = []
+        """Kirim ke semua klien secara paralel, masing-masing dengan batas waktu.
+
+        broadcast dipanggil dari jalur ingest telemetry, jadi satu klien yang
+        lambat (mis. koneksi Wi-Fi buruk) tidak boleh menahan penyimpanan data.
+        Klien yang gagal atau melewati batas waktu diputus.
+        """
+        if not self.connections:
+            return
         data = json.dumps(message, default=str)
-        for ws in self.connections:
-            try:
-                await ws.send_text(data)
-            except Exception:
-                dead.append(ws)
-        for ws in dead:
-            self.connections.discard(ws)
+        clients = list(self.connections)
+        results = await asyncio.gather(*(self._send(ws, data) for ws in clients))
+        for ws, ok in zip(clients, results):
+            if not ok:
+                self.connections.discard(ws)
+                asyncio.get_running_loop().create_task(self._close(ws))
+
+    @staticmethod
+    async def _close(ws: WebSocket) -> None:
+        try:
+            await asyncio.wait_for(ws.close(code=1011), SEND_TIMEOUT_SECONDS)
+        except Exception:
+            pass
 
 
 hub = Hub()

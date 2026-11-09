@@ -1,17 +1,17 @@
 -- Perbaikan counter energi pada DATABASE DUMMY (pengembangan saja).
 -- JANGAN jalankan pada database dengan meter fisik: skrip ini menimpa nilai
--- kWh/kVARh/kVAh dengan rumus simulator.
+-- kWh/kVARh/kVAh yang tersimpan.
 --
 -- Masalah yang diperbaiki:
---   * simulator lama menghitung kWh dari "hari ini - 29 hari", sehingga counter
---     turun setiap 00:00 UTC;
---   * perbaikan simulator (titik awal tetap 2026-01-01) membuat counter
---     melonjak sekali saat versi baru mulai berjalan;
+--   * simulator lama menghitung kWh dengan rumus tetap per hari (tidak
+--     mengikuti kW, selisih ~38x), turun setiap 00:00 UTC, dan melonjak saat
+--     versi baru mulai berjalan;
 --   * kVAh lama = kWh / PF sesaat (tidak monoton).
 --
--- Cara kerja: kWh setiap baris dihitung ulang dengan rumus simulator saat ini
---   kWh   = energi_awal + daya_nominal x 0.59 x hari_sejak_2026-01-01
---   kVARh = kWh x 0.4
+-- Cara kerja (sama dengan simulator & seed saat ini): counter dihitung ulang
+-- dengan mengintegrasikan daya yang TERSIMPAN di setiap baris:
+--   kWh   = energi_awal + Σ (P_sebelumnya + P_sekarang) / 2 x Δt_jam
+--   kVARh = energi_awal x 0.4 + Σ (Q_sebelumnya + Q_sekarang) / 2 x Δt_jam
 -- lalu kVAh diintegrasikan per interval (sama dengan backend):
 --   kVAh  = kWh_awal / PF_awal + Σ ΔkWh / PF_rata2
 --
@@ -48,16 +48,42 @@ INSERT INTO meter_specs VALUES
   ('PM-PEL2-01', 24.1, 289.2),
   ('PM-PEL3-01', 28.9, 346.8);
 
--- 1. kWh dan kVARh dari rumus simulator (monoton, tanpa lonjakan).
+-- 1. kWh dan kVARh dari integrasi daya tersimpan (monoton, sesuai kW).
+WITH steps AS (
+  SELECT
+    r.time,
+    r.device_id,
+    s.base_energy,
+    COALESCE(
+      (COALESCE(r.power, 0) + COALESCE(LAG(r.power) OVER w, 0)) / 2
+        * EXTRACT(EPOCH FROM (r.time - LAG(r.time) OVER w)) / 3600.0,
+      0
+    ) AS step_kwh,
+    COALESCE(
+      (COALESCE(r.reactive_power, 0) + COALESCE(LAG(r.reactive_power) OVER w, 0)) / 2
+        * EXTRACT(EPOCH FROM (r.time - LAG(r.time) OVER w)) / 3600.0,
+      0
+    ) AS step_kvarh
+  FROM readings r
+  JOIN devices d ON d.id = r.device_id
+  JOIN meter_specs s ON s.device_code = d.device_code
+  WINDOW w AS (PARTITION BY r.device_id ORDER BY r.time)
+),
+counters AS (
+  SELECT
+    time,
+    device_id,
+    base_energy + SUM(step_kwh) OVER w AS kwh,
+    base_energy * 0.4 + SUM(step_kvarh) OVER w AS kvarh
+  FROM steps
+  WINDOW w AS (PARTITION BY device_id ORDER BY time)
+)
 UPDATE readings r
 SET
-  energy_active = round((s.base_energy + s.nominal_power * 0.59
-    * EXTRACT(EPOCH FROM (r.time - TIMESTAMPTZ '2026-01-01 00:00:00+00')) / 86400.0)::numeric, 3),
-  energy_reactive = round(((s.base_energy + s.nominal_power * 0.59
-    * EXTRACT(EPOCH FROM (r.time - TIMESTAMPTZ '2026-01-01 00:00:00+00')) / 86400.0) * 0.4)::numeric, 3)
-FROM devices d
-JOIN meter_specs s ON s.device_code = d.device_code
-WHERE d.id = r.device_id;
+  energy_active = round(c.kwh::numeric, 3),
+  energy_reactive = round(c.kvarh::numeric, 3)
+FROM counters c
+WHERE r.device_id = c.device_id AND r.time = c.time;
 
 -- 2. kVAh diintegrasikan per interval.
 WITH steps AS (

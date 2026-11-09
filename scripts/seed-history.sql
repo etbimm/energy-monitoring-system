@@ -82,42 +82,47 @@ profile AS (
         0.99,
         base_pf + 0.015 * sin(EXTRACT(EPOCH FROM sample_time) / 3600 + device_id)
       )
-    ) AS power_factor,
-    -- Titik awal sama dengan ENERGY_EPOCH simulator (2026-01-01 00:00 UTC)
-    -- agar counter seed tersambung mulus dengan data live simulator.
-    base_energy
-      + nominal_power * 0.59
-        * EXTRACT(EPOCH FROM (sample_time - TIMESTAMPTZ '2026-01-01 00:00:00+00'))
-        / 86400.0 AS energy_active
+    ) AS power_factor
   FROM samples
 ),
-deltas AS (
-  -- Selisih kWh dan PF rata-rata per interval 15 menit.
+powered AS (
   SELECT
     profile.*,
-    energy_active
-      - LAG(energy_active) OVER w AS delta_kwh,
+    nominal_power * load_factor AS power,
+    (nominal_power * load_factor) * tan(acos(power_factor)) AS reactive_power
+  FROM profile
+),
+steps AS (
+  -- Energi per interval = rata-rata daya awal & akhir interval x durasi (jam),
+  -- sama dengan simulator: kWh += (P_sebelumnya + P_sekarang) / 2 x Δt.
+  SELECT
+    powered.*,
+    COALESCE(
+      (power + LAG(power) OVER w) / 2
+        * EXTRACT(EPOCH FROM (sample_time - LAG(sample_time) OVER w)) / 3600.0,
+      0
+    ) AS step_kwh,
+    COALESCE(
+      (reactive_power + LAG(reactive_power) OVER w) / 2
+        * EXTRACT(EPOCH FROM (sample_time - LAG(sample_time) OVER w)) / 3600.0,
+      0
+    ) AS step_kvarh,
     (power_factor + COALESCE(LAG(power_factor) OVER w, power_factor)) / 2
       AS pf_avg,
-    FIRST_VALUE(energy_active) OVER w AS first_kwh,
     FIRST_VALUE(power_factor) OVER w AS first_pf
-  FROM profile
+  FROM powered
   WINDOW w AS (PARTITION BY device_id ORDER BY sample_time)
 )
 SELECT
-  deltas.*,
-  nominal_power * load_factor AS power,
-  -- kVAh/kVARh kumulatif diintegrasikan per interval (sama dengan backend):
-  -- awal = kWh/PF (atau kWh x tan(acos PF)), lalu + ΔkWh/PF_rata2.
-  first_kwh / first_pf
-    + COALESCE(SUM(delta_kwh / pf_avg) OVER w, 0) AS energy_apparent,
-  first_kwh * tan(acos(first_pf))
-    + COALESCE(SUM(delta_kwh * tan(acos(pf_avg))) OVER w, 0) AS energy_reactive,
-  (nominal_power * load_factor) / power_factor AS apparent_power,
-  (nominal_power * load_factor) * tan(acos(power_factor)) AS reactive_power,
-  (nominal_power * load_factor) * 1000
-    / (sqrt(3.0) * voltage * power_factor) AS current
-FROM deltas
+  steps.*,
+  -- Counter kumulatif: energi awal + jumlah energi tiap interval.
+  base_energy + SUM(step_kwh) OVER w AS energy_active,
+  base_energy * 0.4 + SUM(step_kvarh) OVER w AS energy_reactive,
+  -- kVAh diintegrasikan seperti backend: awal = kWh/PF, lalu + ΔkWh/PF_rata2.
+  base_energy / first_pf + SUM(step_kwh / pf_avg) OVER w AS energy_apparent,
+  power / power_factor AS apparent_power,
+  power * 1000 / (sqrt(3.0) * voltage * power_factor) AS current
+FROM steps
 WINDOW w AS (PARTITION BY device_id ORDER BY sample_time);
 
 INSERT INTO readings (

@@ -22,6 +22,8 @@ const EMPTY_SUMMARY: Summary = {
 const REST_SYNC_MS = 60_000;
 /** Pesan WebSocket dikumpulkan lalu diterapkan sekali per interval ini. */
 const REALTIME_FLUSH_MS = 1_000;
+/** Jarak minimum sinkronisasi REST yang dipicu meter baru (belum ada di daftar). */
+const UNKNOWN_DEVICE_SYNC_MS = 10_000;
 
 export function useEMSData() {
   const [devices, setDevices] = useState<Device[]>(DEMO_MODE ? DEVICES : []);
@@ -32,6 +34,13 @@ export function useEMSData() {
   const [realtime, setRealtime] = useState(false);
   const pending = useRef(new Map<string, TelemetryMessage>());
   const isDemoRef = useRef(DEMO_MODE);
+  // Kode meter yang sudah ada di daftar; dipakai untuk mengenali meter baru.
+  const knownIds = useRef(new Set<string>());
+  const lastUnknownSync = useRef(0);
+
+  useEffect(() => {
+    knownIds.current = new Set(devices.map((device) => device.id));
+  }, [devices]);
 
   const refresh = useCallback(async () => {
     try {
@@ -98,6 +107,16 @@ export function useEMSData() {
       }
       const updates = new Map(pending.current);
       pending.current.clear();
+
+      // Meter yang belum ada di daftar (mis. baru ditambahkan di database):
+      // minta daftar lengkap lewat REST sekarang, tidak menunggu sinkron 60 detik.
+      const hasUnknown = [...updates.keys()].some((code) => !knownIds.current.has(code));
+      const now = Date.now();
+      if (hasUnknown && now - lastUnknownSync.current >= UNKNOWN_DEVICE_SYNC_MS) {
+        lastUnknownSync.current = now;
+        void refresh();
+      }
+
       setDevices((current) =>
         current.map((device) => {
           const message = updates.get(device.id);
