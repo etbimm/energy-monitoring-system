@@ -1,5 +1,10 @@
 # Flowchart Program Utama EMS
 
+> Versi flowchart dengan simbol standar laporan (terminator, proses, keputusan,
+> input/output, subrutin, penyimpanan data, konektor) tersedia di
+> [`flowchart/`](./flowchart/index.html): SVG, PNG, dan draw.io multi-halaman.
+> Buat ulang dengan `py scripts/generate_flowcharts.py`.
+
 Versi draw.io multi-halaman yang dapat diedit tersedia di
 [`program-flowcharts.drawio`](./program-flowcharts.drawio). File tersebut
 memuat flowchart program utama dan subrutin polling Modbus, normalisasi,
