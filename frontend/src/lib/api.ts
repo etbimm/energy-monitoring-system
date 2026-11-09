@@ -4,6 +4,7 @@ import type {
   PhaseReading,
   TimeSeriesPoint,
 } from "@/lib/types";
+import { PLANT_TIME_ZONE } from "@/lib/time";
 
 export interface Summary {
   totalPower: number;
@@ -153,26 +154,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 function mapDevice(device: DeviceResponse): Device {
-  const numberOrZero = (value: number | null | undefined) => value ?? 0;
+  // Nilai yang tidak tersedia tetap null (ditampilkan "–"), bukan 0.
+  const orNull = (value: number | null | undefined) => value ?? null;
   return {
     ...device,
     location: device.location ?? "Tidak diketahui",
     brand: device.brand ?? "Tidak diketahui",
     lastSeen: device.lastSeen ?? "",
-    voltage: numberOrZero(device.voltage),
-    current: numberOrZero(device.current),
-    power: numberOrZero(device.power),
-    apparentPower: numberOrZero(device.apparentPower),
-    reactivePower: numberOrZero(device.reactivePower),
-    energyActive: numberOrZero(device.energyActive),
-    energyReactive: numberOrZero(device.energyReactive),
-    powerFactor: numberOrZero(device.powerFactor),
-    energyApparent: numberOrZero(device.energyApparent),
+    voltage: orNull(device.voltage),
+    current: orNull(device.current),
+    power: orNull(device.power),
+    apparentPower: orNull(device.apparentPower),
+    reactivePower: orNull(device.reactivePower),
+    energyActive: orNull(device.energyActive),
+    energyReactive: orNull(device.energyReactive),
+    powerFactor: orNull(device.powerFactor),
+    energyApparent: orNull(device.energyApparent),
     thdCurrent: device.thdCurrent,
     thdVoltage: device.thdVoltage,
     unbalanceVoltage: device.unbalanceVoltage,
     unbalanceCurrent: device.unbalanceCurrent,
-    frequency: numberOrZero(device.frequency),
+    frequency: orNull(device.frequency),
     phases: device.phases.map((phase) => ({
       phase: phase.phase,
       voltage: phase.voltage ?? null,
@@ -212,18 +214,19 @@ export async function getReadings({
   const rows = await request<ReadingResponse[]>(`/api/readings?${params}`);
   return rows.map((row) => ({
     ...row,
-    power: row.power ?? 0,
-    apparentPower: row.apparentPower ?? 0,
-    reactivePower: row.reactivePower ?? 0,
-    energy: row.energy ?? 0,
-    energyReactive: row.energyReactive ?? 0,
-    energyApparent: row.energyApparent ?? 0,
-    voltage: row.voltage ?? 0,
-    current: row.current ?? 0,
-    frequency: row.frequency ?? 0,
-    powerFactor: row.powerFactor ?? 0,
+    power: row.power ?? null,
+    apparentPower: row.apparentPower ?? null,
+    reactivePower: row.reactivePower ?? null,
+    energy: row.energy ?? null,
+    energyReactive: row.energyReactive ?? null,
+    energyApparent: row.energyApparent ?? null,
+    voltage: row.voltage ?? null,
+    current: row.current ?? null,
+    frequency: row.frequency ?? null,
+    powerFactor: row.powerFactor ?? null,
     thdCurrent: row.thdCurrent,
     label: row.label || new Date(row.timestamp).toLocaleTimeString("id-ID", {
+      timeZone: PLANT_TIME_ZONE,
       hour: "2-digit",
       minute: "2-digit",
     }),

@@ -21,15 +21,11 @@ import { formatNumber } from "@/lib/format";
 import { generateProfileForRange } from "@/lib/mock-data";
 import { POWER_QUALITY_SERIES } from "@/components/dashboard/power-chart";
 import type { TimeSeriesPoint } from "@/lib/types";
+import { PLANT_TIME_ZONE, plantDate, plantDayBoundary } from "@/lib/time";
 
-function isoDate(date: Date): string {
-  const offset = date.getTimezoneOffset();
-  return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 10);
-}
-
-function dateParam(value: string, endOfDay = false): string {
-  return new Date(`${value}T${endOfDay ? "23:59:59" : "00:00:00"}`).toISOString();
-}
+// Tanggal dan batas hari selalu dalam WIB (lihat lib/time.ts).
+const isoDate = plantDate;
+const dateParam = plantDayBoundary;
 
 function rangeDayCount(from: string, to: string): number {
   const start = Date.parse(`${from}T00:00:00Z`);
@@ -135,24 +131,24 @@ export default function HistoryPage() {
   // dan terakhir hanya dipakai untuk fixture mode demo.
   const demoDelta = (key: "energy" | "energyReactive" | "energyApparent") =>
     isDemo && data.length > 1
-      ? Math.max(0, data[data.length - 1][key] - data[0][key])
+      ? Math.max(0, (data[data.length - 1][key] ?? 0) - (data[0][key] ?? 0))
       : 0;
   const totalEnergy = energy?.energyActive ?? demoDelta("energy");
   const totalReactive = energy?.energyReactive ?? demoDelta("energyReactive");
   const totalApparent = energy?.energyApparent ?? demoDelta("energyApparent");
-  const peak = data.reduce((maximum, point) => Math.max(maximum, point.power), 0);
-  const peakApparent = data.reduce(
-    (maximum, point) => Math.max(maximum, point.apparentPower),
-    0,
-  );
-  const peakReactive = data.reduce(
-    (maximum, point) => Math.max(maximum, point.reactivePower),
-    0,
-  );
+  // Statistik hanya dari titik yang punya nilai (titik kosong tidak dihitung 0).
+  const values = (key: "power" | "apparentPower" | "reactivePower") =>
+    data.map((point) => point[key]).filter((value): value is number => value !== null);
+  const mean = (list: number[]) =>
+    list.length ? list.reduce((total, value) => total + value, 0) / list.length : null;
+  const maxOf = (list: number[]) => (list.length ? Math.max(...list) : null);
+  const peak = maxOf(values("power"));
+  const peakApparent = maxOf(values("apparentPower"));
+  const peakReactive = maxOf(values("reactivePower"));
   const isDailyRange = rangeDayCount(range.from, range.to) > 2;
-  const avg = data.length
-    ? data.reduce((total, point) => total + point.power, 0) / data.length
-    : 0;
+  const avg = mean(values("power"));
+  const avgApparent = mean(values("apparentPower"));
+  const avgPf = avg !== null && avgApparent ? avg / avgApparent : null;
   const csv = useMemo(
     () => [
       ["Timestamp", "V", "A", "kW", "kVAR", "kVA", "PF", "Hz", "kWh", "kVARh", "THD-i"],
@@ -178,7 +174,7 @@ export default function HistoryPage() {
       .map((row) =>
         row
           .map((value) => {
-            const cell = String(value);
+            const cell = value === null || value === undefined ? "" : String(value);
             return /[;"\r\n]/.test(cell)
               ? `"${cell.replaceAll('"', '""')}"`
               : cell;
@@ -223,7 +219,7 @@ export default function HistoryPage() {
         <SummaryCard label="Daya Reaktif Puncak" value={formatNumber(peakReactive)} unit="kVAR" />
         <SummaryCard
           label="PF Rata-rata"
-          value={peakApparent > 0 ? formatNumber(avg / (data.reduce((sum, point) => sum + point.apparentPower, 0) / data.length), 3) : "-"}
+          value={formatNumber(avgPf, 3)}
           unit=""
         />
       </div>
@@ -275,7 +271,7 @@ export default function HistoryPage() {
                   {data.map((point) => (
                     <tr key={point.timestamp} className="border-t border-stone-100">
                       <td className="whitespace-nowrap px-2 py-2">
-                        {new Date(point.timestamp).toLocaleString("id-ID")}
+                        {new Date(point.timestamp).toLocaleString("id-ID", { timeZone: PLANT_TIME_ZONE })}
                       </td>
                       {[point.voltage, point.current, point.power, point.reactivePower,
                         point.apparentPower, point.powerFactor, point.frequency,

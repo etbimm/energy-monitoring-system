@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Device, PhaseReading, Reading
 from app.services.alarms import apply_alarms, clear_offline_alarm, send_alarm_notices
-from app.services.derive import apply_derived
+from app.services.derive import PreviousReading, apply_derived
 from app.services.error_reporting import resolve_error
 from app.services.realtime import device_status, hub
 
@@ -50,8 +50,21 @@ def phase_values(device_id: int, ts: datetime, payload: dict) -> list[dict]:
     return rows
 
 
+async def _previous_reading(session: AsyncSession, device_id: int, before: datetime) -> PreviousReading | None:
+    row = (
+        await session.execute(
+            select(Reading.energy_active, Reading.energy_apparent, Reading.power_factor)
+            .where(Reading.device_id == device_id, Reading.time < before)
+            .order_by(Reading.time.desc())
+            .limit(1)
+        )
+    ).first()
+    if row is None:
+        return None
+    return PreviousReading(row.energy_active, row.energy_apparent, row.power_factor)
+
+
 async def ingest_telemetry(session: AsyncSession, payload: dict) -> dict | None:
-    payload = apply_derived(payload)
     code = payload.get("device_code")
     if not code:
         return None
@@ -63,6 +76,8 @@ async def ingest_telemetry(session: AsyncSession, payload: dict) -> dict | None:
         return None
 
     ts = _parse_time(payload.get("timestamp"))
+    # kVAh diintegrasikan dari pembacaan sebelumnya (lihat derive.py).
+    payload = apply_derived(payload, await _previous_reading(session, device.id, ts))
     # INSERT ... ON CONFLICT DO NOTHING: satu statement per tabel, tanpa
     # SELECT lebih dulu seperti session.merge(). Pesan duplikat (mis. MQTT
     # QoS 1 terkirim ulang) diabaikan.

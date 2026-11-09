@@ -438,10 +438,10 @@ export function getPanels(): MeterPanel[] {
       location,
       brands: [...new Set(devices.map((d) => d.brand))],
       devices,
-      power: round1(counted.reduce((s, d) => s + d.power, 0)),
-      apparentPower: round1(counted.reduce((s, d) => s + d.apparentPower, 0)),
-      reactivePower: round1(counted.reduce((s, d) => s + d.reactivePower, 0)),
-      energyActive: round1(counted.reduce((s, d) => s + d.energyActive, 0)),
+      power: round1(counted.reduce((s, d) => s + (d.power ?? 0), 0)),
+      apparentPower: round1(counted.reduce((s, d) => s + (d.apparentPower ?? 0), 0)),
+      reactivePower: round1(counted.reduce((s, d) => s + (d.reactivePower ?? 0), 0)),
+      energyActive: round1(counted.reduce((s, d) => s + (d.energyActive ?? 0), 0)),
     };
   });
 }
@@ -463,19 +463,19 @@ export function getTotals() {
   const sources = DEVICES.filter(
     (d) => d.role === "incoming" && d.status !== "offline",
   );
-  const totalPower = round1(sources.reduce((s, d) => s + d.power, 0));
+  const totalPower = round1(sources.reduce((s, d) => s + (d.power ?? 0), 0));
   const totalApparentPower = round1(
-    sources.reduce((s, d) => s + d.apparentPower, 0),
+    sources.reduce((s, d) => s + (d.apparentPower ?? 0), 0),
   );
   const totalReactivePower = round1(
-    sources.reduce((s, d) => s + d.reactivePower, 0),
+    sources.reduce((s, d) => s + (d.reactivePower ?? 0), 0),
   );
-  const energyToday = round1(sources.reduce((s, d) => s + d.energyActive, 0));
+  const energyToday = round1(sources.reduce((s, d) => s + (d.energyActive ?? 0), 0));
   const energyReactiveToday = round1(
-    sources.reduce((s, d) => s + d.energyReactive, 0),
+    sources.reduce((s, d) => s + (d.energyReactive ?? 0), 0),
   );
   const energyApparentToday = round1(
-    sources.reduce((s, d) => s + d.energyApparent, 0),
+    sources.reduce((s, d) => s + (d.energyApparent ?? 0), 0),
   );
 
   const online = DEVICES.filter((d) => d.status === "online").length;

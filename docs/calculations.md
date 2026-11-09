@@ -48,12 +48,14 @@ saat mengubah file kode yang relevan.
 | Perhitungan | Rumus / aturan implementasi | Lokasi dan penggunaan |
 |---|---|---|
 | PF total dan per fasa | `PF = abs(P / S)`, dibulatkan 3 desimal. Jika P atau S kosong, atau S = 0, hasil `null`. PF yang dikirim meter ditimpa. | [`backend/app/services/derive.py`](../backend/app/services/derive.py), dipanggil saat ingest di [`backend/app/services/ingest.py`](../backend/app/services/ingest.py). |
-| Energi semu | `kVAh = kWh / PF`, dibulatkan 2 desimal. Jika kWh kosong atau PF kosong/nol, hasil `null`. | [`backend/app/services/derive.py`](../backend/app/services/derive.py); nilai disimpan bersama telemetry di [`backend/app/services/ingest.py`](../backend/app/services/ingest.py). |
+| Energi semu (counter kVAh) | Diintegrasikan per interval: `kVAh_n = kVAh_(n-1) + ΔkWh / PF_rata2`, dengan `ΔkWh = kWh_n - kWh_(n-1)` dan `PF_rata2` = rata-rata PF awal & akhir interval yang tersedia; dibulatkan 3 desimal. Nilai awal (belum ada pembacaan sebelumnya) dan setelah counter kWh turun/reset: `kWh / PF` (2 desimal). Jika PF kosong di kedua ujung (S = 0): `ΔkVAh = ΔkWh`. kWh kosong → `null`. | `integrate_energy_apparent` di [`backend/app/services/derive.py`](../backend/app/services/derive.py); pembacaan sebelumnya diambil di [`backend/app/services/ingest.py`](../backend/app/services/ingest.py). |
 
-**Catatan semantik kVAh:** implementasi membagi energi kWh kumulatif dengan PF pada
-sampel saat itu. Ini pendekatan yang tercantum dalam spesifikasi project, bukan
-integrasi historis `Σ(kVA × durasi)`. Jika PF berubah terhadap waktu, keduanya
-dapat berbeda.
+**Catatan semantik kVAh:** rumus lama `kVAh = kWh kumulatif / PF sesaat`
+menghasilkan counter yang naik-turun mengikuti PF (mis. 1000/0,80 = 1250 lalu
+1001/0,99 = 1011), sehingga selisih kVAh antar waktu tidak bermakna. Integrasi
+per interval di atas adalah bentuk umum `∫kVA dt = ∫kW dt / PF` dari
+spesifikasi dan selalu monoton naik. Register kVAh meter (PAC3220) tetap tidak
+dipakai, sesuai prinsip "nilai turunan = sumber kebenaran tunggal".
 
 ## 3. Agregasi query, ringkasan, dan histori
 
@@ -82,10 +84,12 @@ dapat berbeda.
 | Perhitungan | Rumus / aturan implementasi | Lokasi dan penggunaan |
 |---|---|---|
 | Total daya realtime | Saat pesan WebSocket diterima, `totalPower`/`totalApparentPower`/`totalReactivePower` = jumlah P/S/Q meter role `incoming` dari data device terbaru (sama dengan rumus ringkasan backend). Energi hari ini dan jumlah status tetap dari `GET /api/summary/today` (sinkron tiap 60 detik). Tidak berlaku di mode demo. | `withLiveTotals` di [`frontend/src/lib/realtime.ts`](../frontend/src/lib/realtime.ts), dipakai [`frontend/src/lib/use-ems-data.ts`](../frontend/src/lib/use-ems-data.ts). |
+| Nilai kosong | Nilai yang tidak tersedia dari API (`null`) tetap `null` di frontend dan ditampilkan `–`, bukan `0`. Saat dijumlahkan (total panel/demo), `null` diperlakukan sebagai 0. | `formatNumber` di [`frontend/src/lib/format.ts`](../frontend/src/lib/format.ts); pemetaan di [`frontend/src/lib/api.ts`](../frontend/src/lib/api.ts). |
+| Tanggal & jam di frontend | Semua tanggal "hari ini", rentang History (00:00:00–23:59:59.999), preset tanggal, dan label jam memakai WIB (`Asia/Jakarta`, `+07:00`), tidak bergantung zona waktu browser. | [`frontend/src/lib/time.ts`](../frontend/src/lib/time.ts). |
 | Total panel | Untuk meter dalam panel, kecualikan role `outcoming` dan meter offline; jumlahkan P, S, Q, dan kWh. | [`frontend/src/lib/device-data.ts`](../frontend/src/lib/device-data.ts); fixture panel juga dihitung di [`frontend/src/lib/mock-data.ts`](../frontend/src/lib/mock-data.ts). |
 | Persentase status perangkat | `round(jumlah status / total perangkat × 100)`; jika total 0, hasil 0%. | [`frontend/src/components/dashboard/device-status-summary.tsx`](../frontend/src/components/dashboard/device-status-summary.tsx). |
-| Ringkasan histori | Energi kWh/kVARh/kVAh diambil dari `GET /api/energy` (jumlah delta per meter, lihat tabel backend). Hanya pada mode demo (`NEXT_PUBLIC_DEMO_MODE=true`) dipakai `max(0, energi titik terakhir - energi titik pertama)` dari fixture. Puncak daya = maksimum seri; rata-rata P = `ΣP / jumlah titik`. | [`frontend/src/app/history/page.tsx`](../frontend/src/app/history/page.tsx). |
-| PF rata-rata histori | Rata-rata P dibagi rata-rata S. UI menampilkan `-` jika daya semu puncak tidak positif. | [`frontend/src/app/history/page.tsx`](../frontend/src/app/history/page.tsx). |
+| Ringkasan histori | Energi kWh/kVARh/kVAh diambil dari `GET /api/energy` (jumlah delta per meter, lihat tabel backend). Hanya pada mode demo (`NEXT_PUBLIC_DEMO_MODE=true`) dipakai `max(0, energi titik terakhir - energi titik pertama)` dari fixture. Puncak daya = maksimum seri; rata-rata P = `ΣP / jumlah titik`. Titik tanpa nilai (`null`) tidak ikut dihitung; bila tidak ada titik bernilai, hasil ditampilkan `–`. | [`frontend/src/app/history/page.tsx`](../frontend/src/app/history/page.tsx). |
+| PF rata-rata histori | Rata-rata P dibagi rata-rata S (hanya titik bernilai). UI menampilkan `–` jika rata-rata S kosong atau nol. | [`frontend/src/app/history/page.tsx`](../frontend/src/app/history/page.tsx). |
 | Ringkasan Power Quality | Menentukan THD-I maksimum, THD-U maksimum per panel, serta frekuensi minimum/maksimum dan jumlah meter yang melewati ambang. | [`frontend/src/app/power-quality/page.tsx`](../frontend/src/app/power-quality/page.tsx). |
 | Skala progress THD | `min(100, THD-I / ambang_kritis × 100)` sebagai lebar progress bar. | [`frontend/src/app/power-quality/page.tsx`](../frontend/src/app/power-quality/page.tsx). |
 
@@ -239,9 +243,17 @@ data histori sintetis dibangkitkan tiap 15 menit:
 - Load factor = load berdasarkan jam × faktor hari (Sabtu `0.78`, Minggu `0.62`,
   hari lain `1.0`) × variasi `1 + 0.08 × sin(epoch/7200 + device_id)`.
 - PF = `clamp(base_PF + 0.015 × sin(epoch/3600 + device_id), 0.85, 0.99)`.
-- Energi aktif = `energi_awal + daya_nominal × 0.59 × elapsed_days`.
+- Energi aktif = `energi_awal + daya_nominal × 0.59 × hari_sejak_2026-01-01 00:00 UTC`
+  (titik awal sama dengan simulator, agar counter seed tersambung dengan data live).
 - `P = daya_nominal × load_factor`; `S = P/PF`; `Q = P × tan(acos(PF))`.
-- `kVAh = kWh/PF`; `kVARh = kWh × tan(acos(PF))`.
+- kVAh dan kVARh diintegrasikan per interval 15 menit:
+  `kVAh = kWh_awal/PF_awal + Σ ΔkWh/PF_rata2` dan
+  `kVARh = kWh_awal × tan(acos(PF_awal)) + Σ ΔkWh × tan(acos(PF_rata2))`,
+  dengan `PF_rata2` = rata-rata PF dua sampel berurutan.
+- Perbaikan database dummy yang sudah ada:
+  [`scripts/repair-dummy-energy.sql`](../scripts/repair-dummy-energy.sql)
+  menghitung ulang kWh dengan rumus simulator, `kVARh = kWh × 0.4`, dan kVAh
+  dengan integrasi per interval seperti backend.
 - Arus `I = P × 1000 / (sqrt(3) × V × PF)`; frekuensi
   `f = 50 + 0.03 × sin(epoch/1800 + device_id)`.
 - THD-I = `1.5 + 4 × (0.5 + 0.5 × sin(epoch/2400 + device_id))`;

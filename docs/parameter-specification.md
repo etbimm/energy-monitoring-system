@@ -304,9 +304,10 @@ sebagai rincian, bukan dijumlahkan ke total.
 -- Power factor
 UPDATE readings SET power_factor = power / NULLIF(apparent_power, 0);
 
--- kVAh kumulatif (energy semu)
---_backfill_ saat insert, dari kWh & PF:
-energy_apparent = energy_active / NULLIF(power / apparent_power, 0)
+-- kVAh kumulatif (energy semu), diintegrasikan per interval saat insert:
+-- kVAh_n = kVAh_(n-1) + (kWh_n - kWh_(n-1)) / PF_rata2
+-- nilai awal (belum ada pembacaan sebelumnya) = kWh / PF
+-- (lihat docs/calculations.md dan backend/app/services/derive.py)
 ```
 
 ### 7.3 Energy: delta, bukan absolut

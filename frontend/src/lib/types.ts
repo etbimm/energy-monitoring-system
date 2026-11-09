@@ -89,17 +89,17 @@ export interface Device {
   capabilities: MeterCapabilities;
 
   // ---- L1: INTI (dim-poll dari meter) ----
-  voltage: number; // V
-  current: number; // A
-  power: number; // kW  (daya aktif)
-  apparentPower: number; // kVA (daya semu)
-  reactivePower: number; // kVAR (daya reaktif)
-  energyActive: number; // kWh
-  energyReactive: number; // kVARh
+  voltage: number | null; // V
+  current: number | null; // A
+  power: number | null; // kW  (daya aktif)
+  apparentPower: number | null; // kVA (daya semu)
+  reactivePower: number | null; // kVAR (daya reaktif)
+  energyActive: number | null; // kWh
+  energyReactive: number | null; // kVARh
 
   // ---- L2: TURUNAN (dihitung di backend) ----
-  powerFactor: number; // kW / kVA
-  energyApparent: number; // kVAh = integral kVA dt
+  powerFactor: number | null; // kW / kVA
+  energyApparent: number | null; // kVAh = integral kVA dt
 
   // ---- L3: OPSIONAL (nullable, hanya bila meter mendukung) ----
   thdCurrent: number | null; // % THD arus
@@ -110,7 +110,7 @@ export interface Device {
   // ---- Detail per fasa ----
   phases: PhaseReading[];
 
-  frequency: number; // Hz
+  frequency: number | null; // Hz
   lastSeen: string; // ISO timestamp
 }
 
@@ -134,16 +134,16 @@ export interface MeterPanel {
 export interface TimeSeriesPoint {
   timestamp: string;
   label: string;
-  power: number; // kW
-  apparentPower: number; // kVA
-  reactivePower: number; // kVAR
-  energy: number; // kWh kumulatif
-  energyReactive: number; // kVARh kumulatif
-  energyApparent: number; // kVAh kumulatif
-  voltage: number; // V
-  current: number; // A
-  powerFactor: number;
-  frequency: number; // Hz
+  power: number | null; // kW
+  apparentPower: number | null; // kVA
+  reactivePower: number | null; // kVAR
+  energy: number | null; // kWh kumulatif
+  energyReactive: number | null; // kVARh kumulatif
+  energyApparent: number | null; // kVAh kumulatif
+  voltage: number | null; // V
+  current: number | null; // A
+  powerFactor: number | null;
+  frequency: number | null; // Hz
   thdCurrent: number | null; // %
 }
 

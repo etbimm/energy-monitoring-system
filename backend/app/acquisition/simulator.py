@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from app.acquisition.normalize import to_telemetry
 from app.acquisition.profiles import DEVICE_MODEL, PROFILES
+from app.config import get_settings
 
 VOLTAGE_KEYS = (
     "voltage_l1", "voltage_l2", "voltage_l3",
@@ -70,7 +71,9 @@ def simulate_decoded(
 
     now = datetime.now(timezone.utc)
     jitter = 0.97 + random.random() * 0.06
-    power = spec["power"] * _load_factor(now.hour) * jitter
+    # Profil beban mengikuti jam lokal pabrik (WIB), bukan jam UTC.
+    local_hour = now.astimezone(get_settings().tz).hour
+    power = spec["power"] * _load_factor(local_hour) * jitter
     pf = spec["pf"]
     apparent = power / pf if pf else power
     reactive = power * math.tan(math.acos(min(max(pf, 0.01), 0.999))) if 0 < pf < 1 else 0.0

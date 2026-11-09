@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import type { TimeSeriesPoint } from "@/lib/types";
 import { formatNumber } from "@/lib/format";
+import { PLANT_TIME_ZONE, plantClock, plantDate, plantDayBoundary } from "@/lib/time";
 
 const tooltipStyle = {
   backgroundColor: "#ffffff",
@@ -25,6 +26,7 @@ const tooltipStyle = {
 
 function formatAxisTime(value: number): string {
   return new Date(value).toLocaleTimeString("id-ID", {
+    timeZone: PLANT_TIME_ZONE,
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -49,6 +51,7 @@ function XAxisTick({
 
   const date = new Date(timestamp);
   const dateLabel = date.toLocaleDateString("id-ID", {
+    timeZone: PLANT_TIME_ZONE,
     day: "2-digit",
     month: "2-digit",
   });
@@ -65,7 +68,7 @@ function XAxisTick({
 
   if (mode === "full-day") {
     const timeLabel =
-      date.getHours() === 23 && date.getMinutes() === 59
+      plantClock(date).hour === 23 && plantClock(date).minute === 59
         ? "23:59"
         : formatAxisTime(timestamp);
     return (
@@ -144,11 +147,10 @@ export function PowerChart({
       (point, index, points) =>
         index === 0 || point.timestampValue !== points[index - 1].timestampValue,
     );
-  const firstPointDate = new Date(chartData[0]?.timestampValue ?? Date.now());
-  firstPointDate.setHours(0, 0, 0, 0);
-  const dayStart = firstPointDate.getTime();
-  const dayEnd = new Date(dayStart);
-  dayEnd.setHours(23, 59, 59, 999);
+  // Sumbu 24 jam dimulai 00:00 WIB pada tanggal titik pertama.
+  const firstDay = plantDate(new Date(chartData[0]?.timestampValue ?? Date.now()));
+  const dayStart = Date.parse(plantDayBoundary(firstDay));
+  const dayEnd = new Date(Date.parse(plantDayBoundary(firstDay, true)));
   const dayTicks = [0, 6, 12, 18].map(
     (hour) => dayStart + hour * 60 * 60 * 1000,
   );
@@ -219,6 +221,7 @@ export function PowerChart({
               const date = new Date(timestamp);
               if (xAxisMode === "date") {
                 return date.toLocaleDateString("id-ID", {
+                  timeZone: PLANT_TIME_ZONE,
                   day: "2-digit",
                   month: "long",
                   year: "numeric",
@@ -229,6 +232,7 @@ export function PowerChart({
               if (xAxisMode === "full-day" || !spansMultipleDays) return time;
 
               const dateLabel = date.toLocaleDateString("id-ID", {
+                timeZone: PLANT_TIME_ZONE,
                 day: "2-digit",
                 month: "2-digit",
                 year: "numeric",

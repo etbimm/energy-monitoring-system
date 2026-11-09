@@ -16,10 +16,10 @@ export function getPanelsForDevices(devices: Device[]): MeterPanel[] {
       location,
       brands: [...new Set(panelDevices.map((device) => device.brand))],
       devices: panelDevices,
-      power: counted.reduce((total, device) => total + device.power, 0),
-      apparentPower: counted.reduce((total, device) => total + device.apparentPower, 0),
-      reactivePower: counted.reduce((total, device) => total + device.reactivePower, 0),
-      energyActive: counted.reduce((total, device) => total + device.energyActive, 0),
+      power: counted.reduce((total, device) => total + (device.power ?? 0), 0),
+      apparentPower: counted.reduce((total, device) => total + (device.apparentPower ?? 0), 0),
+      reactivePower: counted.reduce((total, device) => total + (device.reactivePower ?? 0), 0),
+      energyActive: counted.reduce((total, device) => total + (device.energyActive ?? 0), 0),
     };
   });
 }

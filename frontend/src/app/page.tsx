@@ -17,16 +17,16 @@ import { generateProfileForRange } from "@/lib/mock-data";
 import { useEMSData } from "@/lib/use-ems-data";
 import type { TimeSeriesPoint } from "@/lib/types";
 import { formatNumber } from "@/lib/format";
+import { plantDate, plantDayBoundary } from "@/lib/time";
 
 const OVERVIEW_SERIES = [
   { key: "power" as const, label: "Daya Aktif", unit: "kW", color: "#8d1c1c", variant: "area" as const },
   { key: "energy" as const, label: "Energy", unit: "kWh", color: "#0a0a0a", variant: "line" as const, dashed: true },
 ];
 
+// "Hari ini" = tanggal WIB, sama dengan backend.
 function todayString() {
-  const date = new Date();
-  const offset = date.getTimezoneOffset();
-  return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 10);
+  return plantDate();
 }
 
 export default function OverviewPage() {
@@ -38,13 +38,11 @@ export default function OverviewPage() {
   const [profileIsDemo, setProfileIsDemo] = useState(DEMO_MODE);
 
   useEffect(() => {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
     let active = true;
     const load = () => {
       const end = new Date();
       return getReadings({
-        from: start.toISOString(),
+        from: plantDayBoundary(todayString()),
         to: end.toISOString(),
         bucket: "5m",
       })

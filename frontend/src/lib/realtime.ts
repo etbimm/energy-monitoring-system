@@ -25,7 +25,7 @@ export interface TelemetryMessage {
 
 const PHASES = ["L1", "L2", "L3"] as const;
 
-function num(value: number | null | undefined, fallback: number): number {
+function num(value: number | null | undefined, fallback: number | null): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 

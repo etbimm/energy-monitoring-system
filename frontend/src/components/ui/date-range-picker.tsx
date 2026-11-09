@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Calendar, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { plantDate } from "@/lib/time";
 
 export type RangePreset = "24h" | "7d" | "30d" | "custom";
 
@@ -13,10 +14,8 @@ const PRESETS: { label: string; value: RangePreset }[] = [
   { label: "Custom", value: "custom" },
 ];
 
-function isoDate(d: Date): string {
-  const off = d.getTimezoneOffset();
-  return new Date(d.getTime() - off * 60_000).toISOString().slice(0, 10);
-}
+// Tanggal preset dihitung dalam WIB.
+const isoDate = (d: Date) => plantDate(d);
 
 export function DateRangePicker({
   onChange,

@@ -59,18 +59,19 @@ profile AS (
     samples.*,
     400 + 2.5 * sin(EXTRACT(EPOCH FROM sample_time) / 3000 + device_id)
       AS voltage,
+    -- Profil beban harian/mingguan mengikuti jam lokal pabrik (WIB).
     CASE
-      WHEN EXTRACT(HOUR FROM sample_time AT TIME ZONE 'UTC') < 6 THEN 0.25
-      WHEN EXTRACT(HOUR FROM sample_time AT TIME ZONE 'UTC') < 8 THEN 0.55
-      WHEN EXTRACT(HOUR FROM sample_time AT TIME ZONE 'UTC') < 11 THEN 0.95
-      WHEN EXTRACT(HOUR FROM sample_time AT TIME ZONE 'UTC') < 14 THEN 1.15
-      WHEN EXTRACT(HOUR FROM sample_time AT TIME ZONE 'UTC') < 17 THEN 1.00
-      WHEN EXTRACT(HOUR FROM sample_time AT TIME ZONE 'UTC') < 20 THEN 0.70
+      WHEN EXTRACT(HOUR FROM sample_time AT TIME ZONE 'Asia/Jakarta') < 6 THEN 0.25
+      WHEN EXTRACT(HOUR FROM sample_time AT TIME ZONE 'Asia/Jakarta') < 8 THEN 0.55
+      WHEN EXTRACT(HOUR FROM sample_time AT TIME ZONE 'Asia/Jakarta') < 11 THEN 0.95
+      WHEN EXTRACT(HOUR FROM sample_time AT TIME ZONE 'Asia/Jakarta') < 14 THEN 1.15
+      WHEN EXTRACT(HOUR FROM sample_time AT TIME ZONE 'Asia/Jakarta') < 17 THEN 1.00
+      WHEN EXTRACT(HOUR FROM sample_time AT TIME ZONE 'Asia/Jakarta') < 20 THEN 0.70
       ELSE 0.35
     END
       * CASE
-          WHEN EXTRACT(ISODOW FROM sample_time AT TIME ZONE 'UTC') = 6 THEN 0.78
-          WHEN EXTRACT(ISODOW FROM sample_time AT TIME ZONE 'UTC') = 7 THEN 0.62
+          WHEN EXTRACT(ISODOW FROM sample_time AT TIME ZONE 'Asia/Jakarta') = 6 THEN 0.78
+          WHEN EXTRACT(ISODOW FROM sample_time AT TIME ZONE 'Asia/Jakarta') = 7 THEN 0.62
           ELSE 1.0
         END
       * (1 + 0.08 * sin(EXTRACT(EPOCH FROM sample_time) / 7200 + device_id))
@@ -82,28 +83,42 @@ profile AS (
         base_pf + 0.015 * sin(EXTRACT(EPOCH FROM sample_time) / 3600 + device_id)
       )
     ) AS power_factor,
+    -- Titik awal sama dengan ENERGY_EPOCH simulator (2026-01-01 00:00 UTC)
+    -- agar counter seed tersambung mulus dengan data live simulator.
     base_energy
       + nominal_power * 0.59
-        * EXTRACT(EPOCH FROM (
-            sample_time
-            - (
-                date_trunc('day', CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
-                AT TIME ZONE 'UTC'
-                - INTERVAL '29 days'
-              )
-          )) / 86400.0 AS energy_active
+        * EXTRACT(EPOCH FROM (sample_time - TIMESTAMPTZ '2026-01-01 00:00:00+00'))
+        / 86400.0 AS energy_active
   FROM samples
+),
+deltas AS (
+  -- Selisih kWh dan PF rata-rata per interval 15 menit.
+  SELECT
+    profile.*,
+    energy_active
+      - LAG(energy_active) OVER w AS delta_kwh,
+    (power_factor + COALESCE(LAG(power_factor) OVER w, power_factor)) / 2
+      AS pf_avg,
+    FIRST_VALUE(energy_active) OVER w AS first_kwh,
+    FIRST_VALUE(power_factor) OVER w AS first_pf
+  FROM profile
+  WINDOW w AS (PARTITION BY device_id ORDER BY sample_time)
 )
 SELECT
-  profile.*,
+  deltas.*,
   nominal_power * load_factor AS power,
-  energy_active / power_factor AS energy_apparent,
-  energy_active * tan(acos(power_factor)) AS energy_reactive,
+  -- kVAh/kVARh kumulatif diintegrasikan per interval (sama dengan backend):
+  -- awal = kWh/PF (atau kWh x tan(acos PF)), lalu + ΔkWh/PF_rata2.
+  first_kwh / first_pf
+    + COALESCE(SUM(delta_kwh / pf_avg) OVER w, 0) AS energy_apparent,
+  first_kwh * tan(acos(first_pf))
+    + COALESCE(SUM(delta_kwh * tan(acos(pf_avg))) OVER w, 0) AS energy_reactive,
   (nominal_power * load_factor) / power_factor AS apparent_power,
   (nominal_power * load_factor) * tan(acos(power_factor)) AS reactive_power,
   (nominal_power * load_factor) * 1000
     / (sqrt(3.0) * voltage * power_factor) AS current
-FROM profile;
+FROM deltas
+WINDOW w AS (PARTITION BY device_id ORDER BY sample_time);
 
 INSERT INTO readings (
   time, device_id, voltage, current, power, apparent_power, reactive_power,

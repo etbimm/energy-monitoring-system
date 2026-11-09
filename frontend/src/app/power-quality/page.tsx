@@ -35,7 +35,10 @@ export default function PowerQualityPage() {
   );
 
   // Frekuensi: seluruh meter mendukungnya, tapi meter offline tidak punya data
-  const live = devices.filter((d) => d.status !== "offline" && d.frequency > 0);
+  const live = devices.filter(
+    (d): d is typeof d & { frequency: number } =>
+      d.status !== "offline" && d.frequency !== null && d.frequency > 0,
+  );
   const freqs = live.map((d) => d.frequency);
   const freqMin = freqs.length ? Math.min(...freqs) : null;
   const freqMax = freqs.length ? Math.max(...freqs) : null;
@@ -200,7 +203,9 @@ export default function PowerQualityPage() {
                     <span className="text-xs font-medium tabular-nums text-amber-800">
                       {formatNumber(d.frequency, 2)} Hz (deviasi{" "}
                       {formatNumber(
-                        Math.abs(d.frequency - FREQUENCY_THRESHOLDS.nominal),
+                        d.frequency === null
+                          ? null
+                          : Math.abs(d.frequency - FREQUENCY_THRESHOLDS.nominal),
                         2,
                       )}{" "}
                       Hz)
