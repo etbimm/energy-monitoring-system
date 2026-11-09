@@ -130,3 +130,24 @@ async def test_custom_titles():
     await reporter.report("alarm:PM-1:pf", "PF kritis", title="EMS ALARM KRITIS")
     await reporter.resolve("alarm:PM-1:pf", "PF normal", title="EMS ALARM PULIH")
     assert messages == ["EMS ALARM KRITIS\nPF kritis", "EMS ALARM PULIH\nPF normal"]
+
+
+@pytest.mark.asyncio
+async def test_background_mode_does_not_block_caller():
+    import asyncio
+
+    messages = []
+    gate = asyncio.Event()
+
+    async def slow_send(message: str) -> None:
+        await gate.wait()  # mensimulasikan Telegram lambat
+        messages.append(message)
+
+    reporter = ErrorReporter(sender=slow_send, background=True, min_interval=0)
+    await asyncio.wait_for(reporter.report("api:x", "API error."), 1)
+    await asyncio.wait_for(reporter.resolve("api:x", "API pulih."), 1)
+    assert messages == []  # pemanggil tidak menunggu pengiriman
+
+    gate.set()
+    await asyncio.wait_for(reporter.drain(), 1)
+    assert messages == ["EMS ERROR\nAPI error.", "EMS PULIH\nAPI pulih."]

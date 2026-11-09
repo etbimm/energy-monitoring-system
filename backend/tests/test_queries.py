@@ -4,12 +4,18 @@ from types import SimpleNamespace
 from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
 
+from datetime import timedelta
+
+import pytest
+
 from app.services.queries import (
+    READINGS_1MIN,
     _bucket_expr,
     _bucket_interval,
     _point,
     _severity_rank,
     local_day_start,
+    validate_range,
 )
 
 
@@ -50,3 +56,28 @@ def test_point_label_is_local_time():
     )
     point = _point(datetime(2026, 11, 6, 1, 30, tzinfo=timezone.utc), row)
     assert point.label == "08:30"
+
+
+def test_charts_read_from_continuous_aggregate():
+    assert "readings_1min.bucket" in _sql(_bucket_expr("5 minutes", READINGS_1MIN.c.bucket))
+
+
+def test_raw_range_is_limited_to_seven_days():
+    end = datetime(2026, 11, 9, tzinfo=timezone.utc)
+    validate_range(end - timedelta(days=7), end, "raw")
+    with pytest.raises(ValueError, match="raw maksimal 7 hari"):
+        validate_range(end - timedelta(days=8), end, "raw")
+
+
+def test_bucket_point_count_is_limited():
+    end = datetime(2026, 11, 9, tzinfo=timezone.utc)
+    validate_range(end - timedelta(days=13), end, "1m")  # ~18.700 titik
+    with pytest.raises(ValueError, match="terlalu besar"):
+        validate_range(end - timedelta(days=30), end, "1m")  # ~43.200 titik
+    validate_range(end - timedelta(days=365 * 5), end, "1d")
+
+
+def test_reversed_range_rejected():
+    end = datetime(2026, 11, 9, tzinfo=timezone.utc)
+    with pytest.raises(ValueError):
+        validate_range(end, end - timedelta(hours=1), "5m")

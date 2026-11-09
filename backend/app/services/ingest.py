@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Device, PhaseReading, Reading
@@ -22,6 +23,33 @@ def _parse_time(value: str | datetime | None) -> datetime:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
+READING_FIELDS = (
+    "voltage", "current", "power", "apparent_power", "reactive_power",
+    "energy_active", "energy_reactive", "frequency", "power_factor",
+    "energy_apparent", "thd_current", "thd_voltage", "unbalance_voltage",
+    "unbalance_current",
+)
+PHASE_FIELDS = (
+    "voltage", "current", "power", "apparent_power", "reactive_power",
+    "power_factor", "thd_current", "thd_voltage",
+)
+
+
+def reading_values(device_id: int, ts: datetime, payload: dict) -> dict:
+    return {"time": ts, "device_id": device_id, **{f: payload.get(f) for f in READING_FIELDS}}
+
+
+def phase_values(device_id: int, ts: datetime, payload: dict) -> list[dict]:
+    rows = []
+    for name, phase in (payload.get("phases") or {}).items():
+        if name not in {"L1", "L2", "L3"} or not isinstance(phase, dict):
+            continue
+        rows.append(
+            {"time": ts, "device_id": device_id, "phase": name, **{f: phase.get(f) for f in PHASE_FIELDS}}
+        )
+    return rows
+
+
 async def ingest_telemetry(session: AsyncSession, payload: dict) -> dict | None:
     payload = apply_derived(payload)
     code = payload.get("device_code")
@@ -35,45 +63,15 @@ async def ingest_telemetry(session: AsyncSession, payload: dict) -> dict | None:
         return None
 
     ts = _parse_time(payload.get("timestamp"))
-    reading = Reading(
-        time=ts,
-        device_id=device.id,
-        voltage=payload.get("voltage"),
-        current=payload.get("current"),
-        power=payload.get("power"),
-        apparent_power=payload.get("apparent_power"),
-        reactive_power=payload.get("reactive_power"),
-        energy_active=payload.get("energy_active"),
-        energy_reactive=payload.get("energy_reactive"),
-        frequency=payload.get("frequency"),
-        power_factor=payload.get("power_factor"),
-        energy_apparent=payload.get("energy_apparent"),
-        thd_current=payload.get("thd_current"),
-        thd_voltage=payload.get("thd_voltage"),
-        unbalance_voltage=payload.get("unbalance_voltage"),
-        unbalance_current=payload.get("unbalance_current"),
+    # INSERT ... ON CONFLICT DO NOTHING: satu statement per tabel, tanpa
+    # SELECT lebih dulu seperti session.merge(). Pesan duplikat (mis. MQTT
+    # QoS 1 terkirim ulang) diabaikan.
+    await session.execute(
+        pg_insert(Reading).values(reading_values(device.id, ts, payload)).on_conflict_do_nothing()
     )
-    await session.merge(reading)
-
-    phases = payload.get("phases") or {}
-    for name, phase in phases.items():
-        if name not in {"L1", "L2", "L3"}:
-            continue
-        await session.merge(
-            PhaseReading(
-                time=ts,
-                device_id=device.id,
-                phase=name,
-                voltage=phase.get("voltage"),
-                current=phase.get("current"),
-                power=phase.get("power"),
-                apparent_power=phase.get("apparent_power"),
-                reactive_power=phase.get("reactive_power"),
-                power_factor=phase.get("power_factor"),
-                thd_current=phase.get("thd_current"),
-                thd_voltage=phase.get("thd_voltage"),
-            )
-        )
+    phases = phase_values(device.id, ts, payload)
+    if phases:
+        await session.execute(pg_insert(PhaseReading).values(phases).on_conflict_do_nothing())
 
     device.last_seen_at = ts
     await clear_offline_alarm(session, device.id)

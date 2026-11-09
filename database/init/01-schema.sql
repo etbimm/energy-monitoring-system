@@ -106,8 +106,10 @@ CREATE TABLE IF NOT EXISTS notification_state (
 );
 
 -- Agregat 1 menit (grafik shift / laporan harian)
+-- materialized_only = false: data terbaru yang belum dimaterialisasi ikut
+-- dihitung real-time, sehingga grafik dan total energi tidak tertinggal.
 CREATE MATERIALIZED VIEW IF NOT EXISTS readings_1min
-WITH (timescaledb.continuous) AS
+WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
 SELECT
   device_id,
   time_bucket(INTERVAL '1 minute', time) AS bucket,
@@ -185,3 +187,25 @@ SELECT add_continuous_aggregate_policy(
   schedule_interval => INTERVAL '1 hour',
   if_not_exists => TRUE
 );
+
+-- ============================================
+-- Kompresi dan retensi (lihat docs/data-model.md)
+-- Data mentah dikompresi setelah 7 hari dan dihapus setelah 90 hari.
+-- Agregat (readings_1min, readings_15min, daily_energy) disimpan permanen.
+-- ============================================
+ALTER TABLE readings SET (
+  timescaledb.compress,
+  timescaledb.compress_segmentby = 'device_id',
+  timescaledb.compress_orderby = 'time DESC'
+);
+SELECT add_compression_policy('readings', INTERVAL '7 days', if_not_exists => TRUE);
+
+ALTER TABLE phase_readings SET (
+  timescaledb.compress,
+  timescaledb.compress_segmentby = 'device_id, phase',
+  timescaledb.compress_orderby = 'time DESC'
+);
+SELECT add_compression_policy('phase_readings', INTERVAL '7 days', if_not_exists => TRUE);
+
+SELECT add_retention_policy('readings', INTERVAL '90 days', if_not_exists => TRUE);
+SELECT add_retention_policy('phase_readings', INTERVAL '90 days', if_not_exists => TRUE);

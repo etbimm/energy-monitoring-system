@@ -28,6 +28,9 @@ services:
     command:
       - |
         set -eu
+        # Hapus file lama: mosquitto_passwd -c menolak menimpa file yang ada
+        # (terjadi saat container di-restart, bukan dibuat ulang).
+        rm -f /mosquitto/passwd
         mosquitto_passwd -b -c /mosquitto/passwd "$$MQTT_USERNAME" "$$MQTT_PASSWORD"
         chown mosquitto:mosquitto /mosquitto/passwd
         chmod 0700 /mosquitto/passwd

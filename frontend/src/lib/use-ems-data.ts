@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getDevices, getRealtimeUrl, getSummary, type Summary } from "@/lib/api";
 import { DEMO_MODE } from "@/lib/demo-mode";
 import { DEVICES, getTotals } from "@/lib/mock-data";
+import { applyTelemetry, withLiveTotals, type TelemetryMessage } from "@/lib/realtime";
 import type { Device } from "@/lib/types";
 
 const EMPTY_SUMMARY: Summary = {
@@ -17,6 +18,11 @@ const EMPTY_SUMMARY: Summary = {
   total: 0,
 };
 
+/** Sinkronisasi penuh lewat REST (status alarm, energi hari ini, jumlah status). */
+const REST_SYNC_MS = 60_000;
+/** Pesan WebSocket dikumpulkan lalu diterapkan sekali per interval ini. */
+const REALTIME_FLUSH_MS = 1_000;
+
 export function useEMSData() {
   const [devices, setDevices] = useState<Device[]>(DEMO_MODE ? DEVICES : []);
   const [summary, setSummary] = useState<Summary>(DEMO_MODE ? getTotals() : EMPTY_SUMMARY);
@@ -24,7 +30,8 @@ export function useEMSData() {
   const [error, setError] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(DEMO_MODE);
   const [realtime, setRealtime] = useState(false);
-  const lastRealtimeRefresh = useRef(0);
+  const pending = useRef(new Map<string, TelemetryMessage>());
+  const isDemoRef = useRef(DEMO_MODE);
 
   const refresh = useCallback(async () => {
     try {
@@ -41,28 +48,33 @@ export function useEMSData() {
           setDevices(DEVICES);
           setSummary(getTotals());
           setIsDemo(true);
+          isDemoRef.current = true;
           setError("Backend belum memiliki data meter. Menampilkan data simulasi.");
           return;
         }
         setDevices(nextDevices);
         setSummary(nextSummary);
         setIsDemo(false);
+        isDemoRef.current = false;
         setError("Backend belum memiliki data meter.");
         return;
       }
       setDevices(nextDevices);
       setSummary(nextSummary);
       setIsDemo(false);
+      isDemoRef.current = false;
       setError(null);
     } catch (cause) {
       if (DEMO_MODE) {
         setDevices(DEVICES);
         setSummary(getTotals());
         setIsDemo(true);
+        isDemoRef.current = true;
       } else {
         setDevices([]);
         setSummary(EMPTY_SUMMARY);
         setIsDemo(false);
+        isDemoRef.current = false;
       }
       setError(cause instanceof Error ? cause.message : "Gagal memuat data EMS.");
     } finally {
@@ -72,10 +84,33 @@ export function useEMSData() {
 
   useEffect(() => {
     void refresh();
-    const poll = window.setInterval(() => void refresh(), 15_000);
+    const poll = window.setInterval(() => void refresh(), REST_SYNC_MS);
     let active = true;
     let retry: number | undefined;
     let socket: WebSocket;
+
+    // Terapkan pesan yang terkumpul ke state sekali per detik (bukan per pesan),
+    // tanpa memanggil REST: data sudah ada di payload WebSocket.
+    const flush = window.setInterval(() => {
+      if (pending.current.size === 0 || isDemoRef.current) {
+        pending.current.clear();
+        return;
+      }
+      const updates = new Map(pending.current);
+      pending.current.clear();
+      setDevices((current) =>
+        current.map((device) => {
+          const message = updates.get(device.id);
+          return message ? applyTelemetry(device, message) : device;
+        }),
+      );
+    }, REALTIME_FLUSH_MS);
+
+    const queue = (message: TelemetryMessage) => {
+      if (message && typeof message.device_code === "string") {
+        pending.current.set(message.device_code, message);
+      }
+    };
 
     const connect = () => {
       if (!active) return;
@@ -88,12 +123,15 @@ export function useEMSData() {
       socket.onerror = () => socket.close();
       socket.onmessage = (event) => {
         try {
-          const message: { type?: string } = JSON.parse(event.data);
-          if (message.type !== "telemetry" && message.type !== "snapshot") return;
-          const now = Date.now();
-          if (now - lastRealtimeRefresh.current < 1_000) return;
-          lastRealtimeRefresh.current = now;
-          void refresh();
+          const message: { type?: string; payload?: unknown } = JSON.parse(event.data);
+          if (message.type === "telemetry") {
+            queue(message.payload as TelemetryMessage);
+          } else if (message.type === "snapshot" && Array.isArray(message.payload)) {
+            message.payload.forEach((item) => queue(item as TelemetryMessage));
+          } else if (message.type === "alarm") {
+            // Alarm baru mengubah status warning/critical: sinkronkan lewat REST.
+            void refresh();
+          }
         } catch {
           setError("Backend mengirim pesan realtime yang tidak valid.");
         }
@@ -105,9 +143,16 @@ export function useEMSData() {
       active = false;
       if (retry !== undefined) window.clearTimeout(retry);
       window.clearInterval(poll);
+      window.clearInterval(flush);
       socket.close();
     };
   }, [refresh]);
 
-  return { devices, summary, loading, error, isDemo, realtime, refresh };
+  // Total daya mengikuti data realtime; energi hari ini & jumlah status dari REST.
+  const liveSummary = useMemo(
+    () => (isDemo ? summary : withLiveTotals(summary, devices)),
+    [isDemo, summary, devices],
+  );
+
+  return { devices, summary: liveSummary, loading, error, isDemo, realtime, refresh };
 }

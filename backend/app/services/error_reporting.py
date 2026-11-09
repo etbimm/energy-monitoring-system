@@ -89,6 +89,7 @@ class DbNotificationStore:
 
 
 _STORE_TIMEOUT_SECONDS = 3.0
+_QUEUE_SIZE = 100
 
 
 class ErrorReporter:
@@ -96,6 +97,8 @@ class ErrorReporter:
         self,
         sender: Callable[[str], Awaitable[None]] | None = None,
         store: NotificationStore | None = None,
+        background: bool = False,
+        min_interval: float = 1.0,
     ) -> None:
         self._active: dict[str, str] = {}
         # Key yang aktif tetapi gagal dicatat di store (mis. database mati);
@@ -104,6 +107,12 @@ class ErrorReporter:
         self._sender = sender
         self._store = store
         self._loaded = store is None
+        # Mode background: pesan dimasukkan antrean dan dikirim worker terpisah,
+        # sehingga request API / ingest tidak menunggu Telegram (timeout 5 s).
+        self._background = background
+        self._min_interval = min_interval
+        self._queue: asyncio.Queue[str] | None = None
+        self._worker: asyncio.Task | None = None
 
     async def _store_call(self, coro):
         return await asyncio.wait_for(coro, _STORE_TIMEOUT_SECONDS)
@@ -191,6 +200,40 @@ class ErrorReporter:
         await self._notify(f"{title}\n{recovery}")
 
     async def _notify(self, message: str) -> None:
+        if self._background:
+            self._enqueue(message)
+            return
+        await self._deliver(message)
+
+    def _enqueue(self, message: str) -> None:
+        if self._queue is None:
+            self._queue = asyncio.Queue(maxsize=_QUEUE_SIZE)
+        if self._worker is None or self._worker.done():
+            self._worker = asyncio.get_running_loop().create_task(
+                self._run_worker(), name="telegram-notifier"
+            )
+        try:
+            self._queue.put_nowait(message)
+        except asyncio.QueueFull:
+            log.warning("Antrean notifikasi Telegram penuh; pesan dibuang")
+
+    async def _run_worker(self) -> None:
+        assert self._queue is not None
+        while True:
+            message = await self._queue.get()
+            try:
+                await self._deliver(message)
+            finally:
+                self._queue.task_done()
+            # Jaga di bawah batas Telegram (~1 pesan/detik per chat).
+            await asyncio.sleep(self._min_interval)
+
+    async def drain(self) -> None:
+        """Tunggu sampai semua pesan di antrean terkirim (mis. saat shutdown)."""
+        if self._queue is not None and self._worker is not None and not self._worker.done():
+            await self._queue.join()
+
+    async def _deliver(self, message: str) -> None:
         try:
             if self._sender is not None:
                 await self._sender(message)
@@ -224,7 +267,7 @@ class ErrorReporter:
             log.warning("Gagal mengirim notifikasi Telegram (%s)", type(exc).__name__)
 
 
-error_reporter = ErrorReporter(store=DbNotificationStore())
+error_reporter = ErrorReporter(store=DbNotificationStore(), background=True)
 
 
 async def report_error(

@@ -74,7 +74,8 @@ export default function OverviewPage() {
         });
     };
     void load();
-    const poll = window.setInterval(() => void load(), 15_000);
+    // Grafik bucket 5 menit: cukup disegarkan setiap 60 detik.
+    const poll = window.setInterval(() => void load(), 60_000);
     return () => {
       active = false;
       window.clearInterval(poll);

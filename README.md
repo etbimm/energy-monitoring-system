@@ -69,7 +69,14 @@ dibuat. Untuk database yang sudah berjalan, jalankan file di
 
 ```bash
 docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/001-daily-energy-wib.sql
+docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/002-notification-state.sql
+docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/003-aggregates-compression-retention.sql
 ```
+
+Kebijakan penyimpanan: data mentah (`readings`, `phase_readings`) dikompresi
+setelah 7 hari dan dihapus setelah 90 hari. Grafik dan total energi dibaca dari
+continuous aggregate `readings_1min` yang disimpan permanen. Query raw dibatasi
+7 hari dan setiap respons time series maksimal 20.000 titik.
 
 ## Status
 

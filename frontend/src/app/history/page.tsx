@@ -14,7 +14,6 @@ import {
 import {
   getEnergyTotals,
   getReadings,
-  getRealtimeUrl,
   type EnergyTotals,
 } from "@/lib/api";
 import { DEMO_MODE } from "@/lib/demo-mode";
@@ -75,9 +74,6 @@ export default function HistoryPage() {
     const days = rangeDayCount(range.from, range.to);
     let inFlight = false;
     let refreshPending = false;
-    let lastRealtimeRefresh = 0;
-    let retry: number | undefined;
-    let socket: WebSocket | undefined;
 
     const load = async () => {
       if (inFlight) {
@@ -124,36 +120,13 @@ export default function HistoryPage() {
       }
     };
 
-    const connect = () => {
-      if (!active) return;
-      socket = new WebSocket(getRealtimeUrl());
-      socket.onclose = () => {
-        if (active) retry = window.setTimeout(connect, 3_000);
-      };
-      socket.onerror = () => socket?.close();
-      socket.onmessage = (event) => {
-        try {
-          const message: { type?: string } = JSON.parse(event.data);
-          if (message.type !== "telemetry" && message.type !== "snapshot") return;
-          const now = Date.now();
-          if (now - lastRealtimeRefresh < 1_000) return;
-          lastRealtimeRefresh = now;
-          void load();
-        } catch {
-          setError("Backend mengirim pesan realtime yang tidak valid.");
-        }
-      };
-    };
-
     void load();
-    const poll = window.setInterval(() => void load(), 15_000);
-    connect();
+    // Histori cukup disegarkan berkala; tidak perlu reload setiap pesan realtime.
+    const poll = window.setInterval(() => void load(), 60_000);
 
     return () => {
       active = false;
-      if (retry !== undefined) window.clearTimeout(retry);
       window.clearInterval(poll);
-      socket?.close();
     };
   }, [range.from, range.to]);
 
