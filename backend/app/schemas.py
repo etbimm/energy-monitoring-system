@@ -247,11 +247,34 @@ def _validate_host(value: str | None) -> str | None:
 
 
 def _validate_model(value: str | None) -> str | None:
+    """Rapikan nama model.
+
+    Model di luar daftar profil ("Lainnya") diperbolehkan. Penulisan yang
+    hanya beda huruf besar/kecil/spasi dari model yang dikenal disamakan ke
+    nama profilnya, agar meter tersebut tetap terbaca akuisisi.
+    """
     from app.acquisition.profiles import PROFILES
 
-    if value is not None and value not in PROFILES:
-        raise ValueError(f"Model tidak dikenal. Pilihan: {', '.join(PROFILES)}")
+    if value is None:
+        return None
+    value = " ".join(value.split())
+    if not value:
+        raise ValueError("Model meter wajib diisi")
+    if len(value) > 60:
+        raise ValueError("Model meter maksimal 60 karakter")
+    for known in PROFILES:
+        if value.casefold() == known.casefold():
+            return known
     return value
+
+
+def _validate_brand(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = " ".join(value.split())
+    if len(value) > 60:
+        raise ValueError("Merek maksimal 60 karakter")
+    return value or None
 
 
 def _strip_optional(value: str | None) -> str | None:
@@ -265,6 +288,9 @@ class DeviceModelOut(CamelModel):
     brand: str
     label: str
     capabilities: MeterCapabilities
+    # False = model "Lainnya": belum ada profil register, belum bisa dibaca
+    # akuisisi mode modbus.
+    supported: bool = True
 
 
 class DeviceConfigOut(CamelModel):
@@ -282,6 +308,7 @@ class DeviceConfigOut(CamelModel):
     modbus_address: int | None = None
     rated_power_kw: float | None = None
     is_active: bool
+    profile_supported: bool = True
     last_seen: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -292,6 +319,8 @@ class DeviceCreate(CamelModel):
     name: str = Field(min_length=1, max_length=80)
     location: str | None = Field(default=None, max_length=80)
     model: str
+    # Wajib untuk model "Lainnya"; untuk model yang dikenal diisi otomatis.
+    brand: str | None = None
     role: DeviceRole
     transport: Transport
     modbus_host: str = Field(min_length=1, max_length=253)
@@ -319,6 +348,11 @@ class DeviceCreate(CamelModel):
     def known_model(cls, value: str) -> str:
         return _validate_model(value)  # type: ignore[return-value]
 
+    @field_validator("brand")
+    @classmethod
+    def clean_brand(cls, value: str | None) -> str | None:
+        return _validate_brand(value)
+
     @field_validator("modbus_host")
     @classmethod
     def valid_host(cls, value: str) -> str:
@@ -331,6 +365,7 @@ class DeviceUpdate(CamelModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
     location: str | None = Field(default=None, max_length=80)
     model: str | None = None
+    brand: str | None = None
     role: DeviceRole | None = None
     transport: Transport | None = None
     modbus_host: str | None = Field(default=None, min_length=1, max_length=253)
@@ -353,6 +388,11 @@ class DeviceUpdate(CamelModel):
     @classmethod
     def known_model(cls, value: str | None) -> str | None:
         return _validate_model(value)
+
+    @field_validator("brand")
+    @classmethod
+    def clean_brand(cls, value: str | None) -> str | None:
+        return _validate_brand(value)
 
     @field_validator("modbus_host")
     @classmethod

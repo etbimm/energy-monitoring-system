@@ -8,7 +8,13 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.acquisition.profiles import MODEL_CATALOG, PROFILES, default_capabilities
+from app.acquisition.profiles import (
+    CUSTOM_MODEL_CAPABILITIES,
+    MODEL_CATALOG,
+    PROFILES,
+    default_capabilities,
+    is_supported_model,
+)
 from app.api.deps import require_admin
 from app.db import get_session
 from app.models import Alarm, AuditLog, Device, User
@@ -164,6 +170,7 @@ def _device_out(device: Device) -> DeviceConfigOut:
         modbus_address=device.modbus_address,
         rated_power_kw=device.rated_power_kw,
         is_active=device.is_active,
+        profile_supported=is_supported_model(device.model),
         last_seen=device.last_seen_at,
         created_at=device.created_at,
         updated_at=device.updated_at,
@@ -206,6 +213,16 @@ def _brand_for(model: str) -> str:
     return entry["label"] if entry else model
 
 
+def _resolve_brand(model: str, brand: str | None) -> str:
+    """Merek yang disimpan: label katalog untuk model dikenal, isian admin
+    untuk model "Lainnya" (wajib diisi)."""
+    if is_supported_model(model):
+        return _brand_for(model)
+    if not brand:
+        raise HTTPException(status_code=422, detail="Merek wajib diisi untuk model di luar daftar (Lainnya).")
+    return brand
+
+
 async def _on_deactivated(session: AsyncSession, device: Device) -> None:
     """Meter dinonaktifkan: tutup alarmnya dan berhenti tampil di realtime."""
     await session.execute(
@@ -217,8 +234,10 @@ async def _on_deactivated(session: AsyncSession, device: Device) -> None:
 
 
 @router.get("/device-models", response_model=list[DeviceModelOut])
-async def device_models() -> list[DeviceModelOut]:
-    return [
+async def device_models(session: AsyncSession = Depends(get_session)) -> list[DeviceModelOut]:
+    """Model yang punya profil register, lalu model "Lainnya" yang sudah
+    pernah dipakai device (agar bisa dipilih ulang tanpa diketik)."""
+    options = [
         DeviceModelOut(
             model=model,
             brand=profile.brand,
@@ -227,6 +246,25 @@ async def device_models() -> list[DeviceModelOut]:
         )
         for model, profile in PROFILES.items()
     ]
+    rows = (
+        await session.execute(
+            select(Device.model, func.min(Device.brand))
+            .where(Device.model.not_in(list(PROFILES)))
+            .group_by(Device.model)
+            .order_by(Device.model)
+        )
+    ).all()
+    for model, brand in rows:
+        options.append(
+            DeviceModelOut(
+                model=model,
+                brand=brand or model,
+                label=f"{brand} {model}" if brand and brand.casefold() not in model.casefold() else model,
+                capabilities=MeterCapabilities.model_validate(CUSTOM_MODEL_CAPABILITIES),
+                supported=False,
+            )
+        )
+    return options
 
 
 @router.get("/devices", response_model=list[DeviceConfigOut])
@@ -252,7 +290,7 @@ async def create_device(
         device_code=payload.device_code,
         name=payload.name,
         location=payload.location,
-        brand=_brand_for(payload.model),
+        brand=_resolve_brand(payload.model, payload.brand),
         model=payload.model,
         role=payload.role,
         transport=payload.transport,
@@ -266,7 +304,7 @@ async def create_device(
     session.add(device)
     audit.record(
         session, admin, "device.create", payload.device_code,
-        payload.model_dump(exclude={"device_code"}),
+        {**payload.model_dump(exclude={"device_code", "brand"}), "brand": device.brand},
     )
     try:
         await session.commit()
@@ -286,7 +324,7 @@ async def update_device(
 ) -> DeviceConfigOut:
     device = await _get_device(session, device_code)
     changes = payload.model_dump(exclude_unset=True)
-    nullable = {"location", "rated_power_kw"}
+    nullable = {"location", "rated_power_kw", "brand"}
     if any(value is None and key not in nullable for key, value in changes.items()):
         raise HTTPException(status_code=422, detail="Field wajib tidak boleh dikosongkan.")
 
@@ -300,11 +338,17 @@ async def update_device(
             exclude_id=device.id,
         )
 
+    new_model = changes.get("model", device.model)
+    if "brand" in changes or "model" in changes:
+        # Merek mengikuti katalog untuk model dikenal; untuk model "Lainnya"
+        # pakai isian baru, atau merek lama bila model tidak berganti.
+        fallback = device.brand if new_model == device.model else None
+        changes["brand"] = _resolve_brand(new_model, changes.get("brand") or fallback)
+
     before = {key: getattr(device, key) for key in changes}
     for key, value in changes.items():
         setattr(device, key, value)
     if "model" in changes and changes["model"] != before["model"]:
-        device.brand = _brand_for(device.model)
         device.capabilities = default_capabilities(device.model)
     if before.get("is_active") is True and device.is_active is False:
         await _on_deactivated(session, device)

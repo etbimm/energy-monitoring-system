@@ -80,9 +80,23 @@ export const METER_MODELS: Record<
   },
 };
 
-/** Ambil kapabilitas sebuah model */
-export function getCapabilities(model: MeterModel): MeterCapabilities {
-  const { label: _l, note: _n, ...caps } = METER_MODELS[model];
+/** Kapabilitas konservatif untuk model "Lainnya" (sama dengan backend). */
+const CUSTOM_MODEL_CAPABILITIES: MeterCapabilities = {
+  perPhase: true,
+  apparentEnergyRegister: false,
+  thdCurrent: false,
+  thdVoltage: false,
+  maxHarmonicOrder: 0,
+  unbalance: false,
+  reactiveEnergy: true,
+  demand: false,
+};
+
+/** Ambil kapabilitas sebuah model (model di luar daftar: kapabilitas dasar). */
+export function getCapabilities(model: string): MeterCapabilities {
+  const entry = METER_MODELS[model as MeterModel];
+  if (!entry) return { ...CUSTOM_MODEL_CAPABILITIES };
+  const { label: _l, note: _n, ...caps } = entry;
   return caps;
 }
 

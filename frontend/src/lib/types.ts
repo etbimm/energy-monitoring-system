@@ -83,7 +83,8 @@ export interface Device {
   name: string;
   location: string; // Tempat / panel induk
   brand: string; // Merk power meter
-  model: MeterModel;
+  /** Model dari daftar, atau model "Lainnya" yang ditambahkan admin. */
+  model: MeterModel | (string & {});
   role: MeterRole;
   status: DeviceStatus;
   capabilities: MeterCapabilities;

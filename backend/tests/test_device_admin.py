@@ -2,7 +2,13 @@
 import pytest
 from pydantic import ValidationError
 
-from app.acquisition.profiles import MODEL_CATALOG, PROFILES, default_capabilities
+from app.acquisition.profiles import (
+    CUSTOM_MODEL_CAPABILITIES,
+    MODEL_CATALOG,
+    PROFILES,
+    default_capabilities,
+    is_supported_model,
+)
 from app.schemas import DeviceCreate, DeviceUpdate, UserCreate
 
 BASE = {
@@ -34,7 +40,8 @@ def test_valid_device_is_normalized():
         {"deviceCode": "MCC5"},
         {"deviceCode": "PM-MCC 5"},
         {"name": "   "},
-        {"model": "MERK LAIN"},
+        {"model": "   "},
+        {"model": "X" * 61},
         {"role": "utama"},
         {"transport": "wifi"},
         {"modbusHost": "192.168.10.300"},
@@ -80,3 +87,23 @@ def test_username_lowercased_and_default_viewer():
     assert user.username == "budi.s"
     assert user.full_name == "Budi"
     assert user.role == "viewer"
+
+
+def test_custom_model_allowed_and_cleaned():
+    device = make(model="  Schneider   PM5350 ", brand="  Schneider  Electric ")
+    assert device.model == "Schneider PM5350"
+    assert device.brand == "Schneider Electric"
+    assert not is_supported_model(device.model)
+
+
+def test_known_model_case_insensitive_is_normalized():
+    # Salah ketik huruf besar/kecil tidak boleh membuat meter jadi "tak dikenal".
+    assert make(model="acrel  amc96").model == "ACREL AMC96"
+    assert is_supported_model("ACREL AMC96")
+
+
+def test_custom_model_gets_conservative_capabilities():
+    caps = default_capabilities("Schneider PM5350")
+    assert caps == CUSTOM_MODEL_CAPABILITIES
+    assert caps is not CUSTOM_MODEL_CAPABILITIES
+    assert caps["thdCurrent"] is False and caps["maxHarmonicOrder"] == 0

@@ -75,6 +75,12 @@ perangkat lain di LAN juga butuh origin tersebut di `CORS_ORIGINS`.
 Device yang dinonaktifkan tidak lagi dibaca akuisisi (paling lambat 60 detik)
 dan tidak tampil di dashboard, tetapi riwayat datanya tetap tersimpan.
 
+Model meter di luar daftar bisa ditambahkan lewat pilihan **Lainnya** (isi merek
+dan nama model). Model seperti ini belum punya peta register Modbus, sehingga
+belum terbaca di mode `modbus` dan tampil offline (ditandai "Belum didukung").
+Agar terbaca, tambahkan profilnya di `backend/app/acquisition/profiles.py`
+(`PROFILES` dan `MODEL_CATALOG`) dengan nama model yang sama persis.
+
 ## Menjalankan Frontend
 
 ```bash

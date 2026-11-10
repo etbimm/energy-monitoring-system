@@ -86,6 +86,8 @@ export interface DeviceModelOption {
   brand: string;
   label: string;
   capabilities: MeterCapabilities;
+  /** false = model "Lainnya": belum ada profil register, belum dibaca akuisisi. */
+  supported: boolean;
 }
 
 export interface DeviceConfig {
@@ -101,6 +103,8 @@ export interface DeviceConfig {
   modbusAddress: number | null;
   ratedPowerKw: number | null;
   isActive: boolean;
+  /** false = model belum punya profil register (tidak bisa dibaca mode modbus). */
+  profileSupported: boolean;
   lastSeen: string | null;
   createdAt: string | null;
   updatedAt: string | null;
@@ -110,6 +114,8 @@ export interface DeviceInput {
   name: string;
   location: string | null;
   model: string;
+  /** Wajib untuk model "Lainnya"; diabaikan backend untuk model yang dikenal. */
+  brand?: string;
   role: MeterRole;
   transport: Transport;
   modbusHost: string;

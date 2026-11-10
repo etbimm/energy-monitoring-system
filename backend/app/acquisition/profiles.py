@@ -267,10 +267,25 @@ MODEL_CATALOG: dict[str, dict] = {
 }
 
 
+# Kapabilitas konservatif untuk model "Lainnya" (belum ada profil register):
+# hanya besaran dasar; THD/unbalance/harmonik dianggap tidak tersedia sampai
+# profilnya ditambahkan di PROFILES.
+CUSTOM_MODEL_CAPABILITIES: dict = {
+    "perPhase": True, "apparentEnergyRegister": False, "thdCurrent": False,
+    "thdVoltage": False, "maxHarmonicOrder": 0, "unbalance": False,
+    "reactiveEnergy": True, "demand": False,
+}
+
+
+def is_supported_model(model: str | None) -> bool:
+    """True bila model punya profil register (bisa dibaca akuisisi modbus)."""
+    return bool(model) and model in PROFILES
+
+
 def default_capabilities(model: str) -> dict:
     """Kapabilitas awal device baru berdasarkan model (salinan, aman diubah)."""
     entry = MODEL_CATALOG.get(model)
-    caps = dict(entry["capabilities"]) if entry else {}
+    caps = dict(entry["capabilities"]) if entry else dict(CUSTOM_MODEL_CAPABILITIES)
     return {**caps, **register_capabilities(model)}
 
 

@@ -12,7 +12,7 @@ import aiomqtt
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app.acquisition.poller import GatewayConnection
-from app.acquisition.profiles import get_profile, register_capabilities
+from app.acquisition.profiles import PROFILES, get_profile, register_capabilities
 from app.acquisition.scheduling import group_by_gateway, next_deadline
 from app.acquisition.simulator import prime_counter, simulate_telemetry
 from app.config import get_settings
@@ -95,6 +95,15 @@ async def poll_one(mqtt, device: dict, gateway: GatewayConnection | None) -> Non
     try:
         if gateway is None:
             payload = simulate_telemetry(code, caps, device["model"])
+        elif device["model"] not in PROFILES:
+            # Model "Lainnya" dari halaman Kelola Device: belum ada peta
+            # register, jadi tidak bisa dibaca sampai profilnya ditambahkan.
+            await publish(mqtt, topic_status, {"device_code": code, "status": "offline", "error": "NoProfile"})
+            _mark_failed(
+                code,
+                f"tidak dibaca: model '{device['model']}' belum punya profil register di profiles.py",
+            )
+            return
         else:
             profile = get_profile(device["model"])
             payload = await gateway.read(

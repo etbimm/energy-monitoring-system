@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, Power, PowerOff, Search } from "lucide-react";
+import { AlertTriangle, Pencil, Plus, Power, PowerOff, Search } from "lucide-react";
 import { AdminOnly } from "@/components/auth/admin-only";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
@@ -30,11 +30,19 @@ const TRANSPORT_LABEL: Record<Transport, string> = {
   ethernet: "Ethernet (Modbus TCP)",
 };
 
+/** Nilai select untuk opsi "Lainnya" (model baru yang diketik admin). */
+const OTHER_MODEL = "__other__";
+
 interface FormState {
   deviceCode: string;
   name: string;
   location: string;
+  /** Model terpilih dari daftar, atau OTHER_MODEL. */
   model: string;
+  /** Nama model baru bila memilih "Lainnya". */
+  customModel: string;
+  /** Merek, wajib untuk model yang belum punya profil register. */
+  brand: string;
   role: MeterRole;
   transport: Transport;
   modbusHost: string;
@@ -49,6 +57,8 @@ function toForm(device?: DeviceConfig, defaultModel = ""): FormState {
     name: device?.name ?? "",
     location: device?.location ?? "",
     model: device?.model ?? defaultModel,
+    customModel: "",
+    brand: device && !device.profileSupported ? (device.brand ?? "") : "",
     role: device?.role ?? "distribution",
     transport: device?.transport ?? "rs485",
     modbusHost: device?.modbusHost ?? "",
@@ -58,11 +68,17 @@ function toForm(device?: DeviceConfig, defaultModel = ""): FormState {
   };
 }
 
-function toInput(form: FormState): DeviceInput {
+function effectiveModel(form: FormState): string {
+  return form.model === OTHER_MODEL ? form.customModel.trim() : form.model;
+}
+
+function toInput(form: FormState, supported: boolean): DeviceInput {
   return {
     name: form.name.trim(),
     location: form.location.trim() || null,
-    model: form.model,
+    model: effectiveModel(form),
+    // Merek hanya dikirim untuk model "Lainnya"; model dikenal pakai katalog.
+    brand: supported ? undefined : form.brand.trim(),
     role: form.role,
     transport: form.transport,
     modbusHost: form.modbusHost.trim(),
@@ -87,12 +103,35 @@ function DeviceForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const selectedModel = models.find((item) => item.model === form.model);
+  const isOther = form.model === OTHER_MODEL;
+  // false untuk model "Lainnya" baru maupun model lain yang sudah pernah dipakai.
+  const supported = !isOther && (selectedModel?.supported ?? true);
+  const supportedModels = models.filter((item) => item.supported);
+  const customModels = models.filter((item) => !item.supported);
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
 
+  function chooseModel(value: string) {
+    const option = models.find((item) => item.model === value);
+    setForm((current) => ({
+      ...current,
+      model: value,
+      // Model lain yang sudah pernah dipakai: isi merek yang tersimpan.
+      brand: option && !option.supported ? option.brand : value === OTHER_MODEL ? current.brand : "",
+    }));
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (device && device.model !== form.model) {
+    if (isOther && !form.customModel.trim()) {
+      setError("Nama model wajib diisi untuk pilihan Lainnya.");
+      return;
+    }
+    if (!supported && !form.brand.trim()) {
+      setError("Merek wajib diisi untuk model di luar daftar.");
+      return;
+    }
+    if (device && device.model !== effectiveModel(form)) {
       const ok = window.confirm(
         "Model diganti: peta register Modbus dan kapabilitas meter ikut berubah. Pastikan model sesuai alat di lapangan. Lanjutkan?",
       );
@@ -101,7 +140,7 @@ function DeviceForm({
     setSaving(true);
     setError(null);
     try {
-      const input = toInput(form);
+      const input = toInput(form, supported);
       const saved = device
         ? await updateDevice(device.id, input)
         : await createDevice({ ...input, deviceCode: form.deviceCode.trim().toUpperCase() });
@@ -171,20 +210,36 @@ function DeviceForm({
         <Field
           label="Model meter"
           htmlFor="dev-model"
-          hint={selectedModel ? `${selectedModel.brand} · harmonik s/d orde ${selectedModel.capabilities.maxHarmonicOrder}` : undefined}
+          hint={
+            supported && selectedModel
+              ? `${selectedModel.brand} · harmonik s/d orde ${selectedModel.capabilities.maxHarmonicOrder}`
+              : undefined
+          }
         >
           <select
             id="dev-model"
             value={form.model}
             required
-            onChange={(event) => set("model", event.target.value)}
+            onChange={(event) => chooseModel(event.target.value)}
             className={inputClass}
           >
-            {models.map((item) => (
-              <option key={item.model} value={item.model}>
-                {item.label}
-              </option>
-            ))}
+            <optgroup label="Didukung akuisisi">
+              {supportedModels.map((item) => (
+                <option key={item.model} value={item.model}>
+                  {item.label}
+                </option>
+              ))}
+            </optgroup>
+            {customModels.length > 0 ? (
+              <optgroup label="Model lain (belum ada profil register)">
+                {customModels.map((item) => (
+                  <option key={item.model} value={item.model}>
+                    {item.label}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
+            <option value={OTHER_MODEL}>Lainnya (model/merek baru)...</option>
           </select>
         </Field>
         <Field label="Daya rating (kW)" htmlFor="dev-rated" hint="Opsional. Dipakai untuk alarm beban lebih.">
@@ -198,6 +253,40 @@ function DeviceForm({
             className={inputClass}
           />
         </Field>
+        {!supported ? (
+          <>
+            <Field label="Merek" htmlFor="dev-brand" hint="mis. Schneider Electric">
+              <input
+                id="dev-brand"
+                value={form.brand}
+                required
+                maxLength={60}
+                onChange={(event) => set("brand", event.target.value)}
+                className={inputClass}
+              />
+            </Field>
+            {isOther ? (
+              <Field label="Nama model" htmlFor="dev-custom-model" hint="mis. PM5350">
+                <input
+                  id="dev-custom-model"
+                  value={form.customModel}
+                  required
+                  maxLength={60}
+                  onChange={(event) => set("customModel", event.target.value)}
+                  className={inputClass}
+                />
+              </Field>
+            ) : null}
+            <p className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 sm:col-span-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <span>
+                Model ini belum punya peta register Modbus, jadi datanya <strong>belum bisa dibaca</strong> dan
+                device akan tampil offline. Agar terbaca, tambahkan profil register model ini di backend
+                (<code>backend/app/acquisition/profiles.py</code>) dengan nama model yang sama persis.
+              </span>
+            </p>
+          </>
+        ) : null}
       </fieldset>
 
       <fieldset className="grid gap-3 sm:grid-cols-2">
@@ -426,7 +515,18 @@ function DevicesManager() {
                       <p className="font-medium">{device.name}</p>
                       <p className="text-xs text-stone-500">{device.location ?? "-"}</p>
                     </td>
-                    <td className="px-4 py-3 text-xs">{modelLabel[device.model] ?? device.model}</td>
+                    <td className="px-4 py-3 text-xs">
+                      {modelLabel[device.model] ?? device.model}
+                      {!device.profileSupported ? (
+                        <span
+                          title="Belum ada profil register: data tidak bisa dibaca akuisisi mode modbus"
+                          className="mt-1 flex w-fit items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
+                        >
+                          <AlertTriangle className="h-3 w-3" aria-hidden />
+                          Belum didukung
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="px-4 py-3 text-xs">{ROLE_LABEL[device.role] ?? device.role}</td>
                     <td className="px-4 py-3 font-mono text-xs">
                       {device.modbusHost ?? "-"}:{device.modbusPort}
