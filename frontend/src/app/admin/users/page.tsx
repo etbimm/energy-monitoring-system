@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, KeyRound, Pencil, Plus, Trash2, UserCheck, UserX } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, KeyRound, Pencil, Plus, Search, Trash2, UserCheck, UserX, X } from "lucide-react";
 import { AdminOnly } from "@/components/auth/admin-only";
 import { useAuth } from "@/components/auth/auth-provider";
 import { PageHeader } from "@/components/layout/page-header";
@@ -270,6 +270,28 @@ function UsersManager() {
   const [notice, setNotice] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [pendingId, setPendingId] = useState<number | null>(null);
+  const [query, setQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"all" | UserRole>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+
+  // Pencarian di sisi browser: daftar akun kecil, jadi tidak perlu query ke backend.
+  const visible = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return users.filter((item) => {
+      if (roleFilter !== "all" && item.role !== roleFilter) return false;
+      if (statusFilter === "active" && !item.isActive) return false;
+      if (statusFilter === "inactive" && item.isActive) return false;
+      if (!needle) return true;
+      return item.fullName.toLowerCase().includes(needle) || item.username.toLowerCase().includes(needle);
+    });
+  }, [users, query, roleFilter, statusFilter]);
+  const filtering = query.trim() !== "" || roleFilter !== "all" || statusFilter !== "all";
+
+  function resetFilters() {
+    setQuery("");
+    setRoleFilter("all");
+    setStatusFilter("all");
+  }
 
   const refresh = useCallback(async () => {
     try {
@@ -328,6 +350,55 @@ function UsersManager() {
       </div>
 
       <Card className="overflow-hidden">
+        <div className="flex flex-wrap items-center gap-3 border-b border-stone-200 px-4 py-3">
+          <label className="relative min-w-0 flex-1 basis-56 sm:max-w-xs">
+            <span className="sr-only">Cari akun</span>
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400"
+              aria-hidden
+            />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Cari nama atau username..."
+              className={`${inputClass} pl-9`}
+            />
+          </label>
+          <label className="flex items-center gap-2 text-xs text-stone-600">
+            <span>Role</span>
+            <select
+              value={roleFilter}
+              onChange={(event) => setRoleFilter(event.target.value as "all" | UserRole)}
+              className={`${inputClass} w-auto py-1.5`}
+            >
+              <option value="all">Semua</option>
+              <option value="admin">Admin</option>
+              <option value="viewer">Viewer</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-xs text-stone-600">
+            <span>Status</span>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value as "all" | "active" | "inactive")}
+              className={`${inputClass} w-auto py-1.5`}
+            >
+              <option value="all">Semua</option>
+              <option value="active">Aktif</option>
+              <option value="inactive">Nonaktif</option>
+            </select>
+          </label>
+          {filtering ? (
+            <Button variant="secondary" onClick={resetFilters}>
+              <X className="h-3.5 w-3.5" aria-hidden />
+              Reset
+            </Button>
+          ) : null}
+          <span className="ml-auto text-xs text-stone-500" aria-live="polite">
+            {filtering ? `${visible.length} dari ${users.length} akun` : `${users.length} akun`}
+          </span>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[860px] text-left text-sm">
             <thead className="bg-stone-50 text-xs uppercase tracking-wide text-stone-500">
@@ -347,8 +418,14 @@ function UsersManager() {
                     Memuat...
                   </td>
                 </tr>
+              ) : visible.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-6 text-center text-stone-500">
+                    {filtering ? "Tidak ada akun yang cocok dengan pencarian." : "Belum ada akun."}
+                  </td>
+                </tr>
               ) : (
-                users.map((item) => {
+                visible.map((item) => {
                   const isMe = item.id === me?.id;
                   return (
                     <tr key={item.id} className={item.isActive ? "" : "bg-stone-50 text-stone-500"}>
