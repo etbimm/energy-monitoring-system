@@ -20,8 +20,15 @@ CREATE TABLE IF NOT EXISTS devices (
   rated_power_kw  DOUBLE PRECISION,
   is_active       BOOLEAN NOT NULL DEFAULT TRUE,
   last_seen_at    TIMESTAMPTZ,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Satu alamat Modbus (gateway + port + slave ID) hanya boleh dipakai satu
+-- meter aktif. Meter nonaktif tidak dihitung agar alamatnya bisa dipakai ulang.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_devices_modbus_active
+  ON devices (modbus_host, modbus_port, modbus_address)
+  WHERE is_active AND modbus_host IS NOT NULL AND modbus_address IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS readings (
   time               TIMESTAMPTZ NOT NULL,
@@ -104,6 +111,36 @@ CREATE TABLE IF NOT EXISTS notification_state (
   summary       TEXT NOT NULL,
   active_since  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Akun pengguna dashboard (dibuat oleh admin, tidak ada registrasi publik).
+-- token_version dinaikkan saat password direset, role diubah, atau akun
+-- dinonaktifkan, sehingga sesi (JWT) lama langsung tidak berlaku.
+CREATE TABLE IF NOT EXISTS users (
+  id             SERIAL PRIMARY KEY,
+  username       TEXT UNIQUE NOT NULL CHECK (username ~ '^[a-z0-9._-]{3,32}$'),
+  password_hash  TEXT NOT NULL,
+  full_name      TEXT NOT NULL,
+  role           TEXT NOT NULL CHECK (role IN ('admin', 'viewer')),
+  is_active      BOOLEAN NOT NULL DEFAULT TRUE,
+  token_version  INTEGER NOT NULL DEFAULT 0,
+  last_login_at  TIMESTAMPTZ,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Jejak perubahan oleh pengguna (login, kelola akun, kelola device).
+CREATE TABLE IF NOT EXISTS audit_log (
+  id          BIGSERIAL PRIMARY KEY,
+  user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  username    TEXT,
+  action      TEXT NOT NULL,
+  target      TEXT,
+  detail      JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_created
+  ON audit_log (created_at DESC);
 
 -- Agregat 1 menit (grafik shift / laporan harian)
 -- materialized_only = false: data terbaru yang belum dimaterialisasi ikut

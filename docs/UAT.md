@@ -71,6 +71,12 @@ Inventaris seed yang diharapkan: **18 meter, 5 merek, 9 lokasi**. Jumlah tersebu
 | UAT-17 | Alur MQTT ke dashboard | Pada mode akuisisi yang dipilih, amati publish telemetry, ingest backend, dan tampilan data pada dashboard. | Telemetry meter dikenali, tersimpan, dan tampil; status online/offline diperbarui. Tidak ada data demo yang disalahartikan sebagai telemetry riil. |  |  |
 | UAT-18 | Pemulihan koneksi | Pulihkan koneksi meter/broker setelah gangguan terkendali. | Worker menyambung kembali sesuai mekanisme retry; pembacaan baru kembali masuk dan status pulih. |  |  |
 | UAT-19 | Tampilan demo / backend tidak tersedia | Pada lingkungan non-produksi, hentikan backend atau gunakan lingkungan tanpa data; buka Overview dan Real-time. | Aplikasi menampilkan pemberitahuan demo/error dengan jelas; tidak menyatakan pembacaan simulasi sebagai data riil. Pulihkan layanan setelah pengujian. |  |  |
+| UAT-21 | Login dan logout | Buka dashboard tanpa login; login dengan akun valid; klik Logout. | Tanpa login diarahkan ke halaman Login. Login valid membuka halaman tujuan. Password salah menampilkan "Username atau password salah". Logout kembali ke halaman Login. |  |  |
+| UAT-22 | Pembatasan percobaan login | Masukkan password salah 6 kali berturut-turut untuk satu username. | Percobaan ke-6 ditolak dengan pesan "Terlalu banyak percobaan login"; tercatat di Audit Log sebagai "Login gagal". |  |  |
+| UAT-23 | Hak akses viewer | Login sebagai viewer; periksa menu, tombol Acknowledge alarm, dan buka `/admin/users` langsung. | Menu Admin tidak tampil, tombol Acknowledge tidak ada, halaman admin menampilkan "Akses ditolak". |  |  |
+| UAT-24 | Kelola akun | Sebagai admin: buat akun viewer, ubah nama/role, reset password, nonaktifkan akun. | Akun baru bisa login. Setelah reset password/nonaktif, sesi akun tersebut berakhir. Admin tidak bisa menonaktifkan/menurunkan role akunnya sendiri. |  |  |
+| UAT-25 | Tambah device | Sebagai admin buka Kelola Device; tambah device dengan alamat Modbus yang sudah dipakai, lalu dengan alamat yang benar. | Alamat bentrok ditolak dengan nama device pemakainya. Device baru tersimpan, tampil di dashboard, dan mulai dibaca akuisisi <= 60 detik. |  |  |
+| UAT-26 | Nonaktifkan device | Nonaktifkan satu device lalu aktifkan kembali. | Device hilang dari dashboard dan alarm aktifnya ditutup; riwayat di History tetap ada. Setelah diaktifkan, data kembali masuk. Semua aksi tercatat di Audit Log. |  |  |
 | UAT-20 | Pemeriksaan total sistem | Bandingkan total daya/energi Overview dengan meter ber-role `incoming` pada waktu/rentang yang sama. | Total hanya menjumlahkan meter incoming; meter outcoming/distribution tidak terhitung ganda. Selisih yang ditemukan dicatat dan disetujui. |  |  |
 
 ## 6. Catatan Pengujian dan Temuan
@@ -85,7 +91,7 @@ Inventaris seed yang diharapkan: **18 meter, 5 merek, 9 lokasi**. Jumlah tersebu
 
 | Ringkasan | Jumlah |
 |---|---:|
-| Total skenario | 20 |
+| Total skenario | 26 |
 | Lulus |  |
 | Gagal |  |
 | Blocked |  |

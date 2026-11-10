@@ -1,7 +1,9 @@
+import ipaddress
+import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -130,3 +132,229 @@ class TelemetryIn(BaseModel):
 class ClientErrorIn(BaseModel):
     key: str = Field(min_length=1, max_length=120, pattern=r"^[a-zA-Z0-9._-]+$")
     summary: str = Field(min_length=1, max_length=300)
+
+
+# ---------------------------------------------------------------------------
+# Login & akun pengguna
+# ---------------------------------------------------------------------------
+
+UserRole = Literal["admin", "viewer"]
+USERNAME_PATTERN = r"^[a-z0-9._-]{3,32}$"
+
+
+def _normalize_username(value: str) -> str:
+    return value.strip().lower() if isinstance(value, str) else value
+
+
+def _required_text(value: str, label: str) -> str:
+    value = value.strip()
+    if not value:
+        raise ValueError(f"{label} wajib diisi")
+    return value
+
+
+class LoginIn(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def normalize(cls, value: str) -> str:
+        return _normalize_username(value)
+
+
+class UserOut(CamelModel):
+    id: int
+    username: str
+    full_name: str
+    role: UserRole
+    is_active: bool
+    last_login_at: datetime | None = None
+    created_at: datetime | None = None
+
+
+class UserCreate(CamelModel):
+    username: str = Field(pattern=USERNAME_PATTERN)
+    full_name: str = Field(min_length=1, max_length=80)
+    role: UserRole = "viewer"
+    password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def normalize(cls, value: str) -> str:
+        return _normalize_username(value)
+
+    @field_validator("full_name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        return _required_text(value, "Nama lengkap")
+
+
+class UserUpdate(CamelModel):
+    full_name: str | None = Field(default=None, min_length=1, max_length=80)
+    role: UserRole | None = None
+    is_active: bool | None = None
+
+    @field_validator("full_name")
+    @classmethod
+    def strip_name(cls, value: str | None) -> str | None:
+        return None if value is None else _required_text(value, "Nama lengkap")
+
+
+class PasswordReset(CamelModel):
+    password: str = Field(min_length=1, max_length=128)
+
+
+class PasswordChange(CamelModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=1, max_length=128)
+
+
+class AuditLogOut(CamelModel):
+    id: int
+    username: str | None = None
+    action: str
+    target: str | None = None
+    detail: dict = Field(default_factory=dict)
+    created_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Manajemen device (admin)
+# ---------------------------------------------------------------------------
+
+DEVICE_CODE_PATTERN = r"^PM-[A-Z0-9]+(-[A-Z0-9]+)*$"
+DeviceRole = Literal["incoming", "outcoming", "distribution"]
+Transport = Literal["rs485", "ethernet"]
+_HOSTNAME = re.compile(
+    r"^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+    r"(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$"
+)
+
+
+def _validate_host(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        pass
+    # Angka bertitik yang bukan IP valid (mis. 192.168.1.300) adalah salah ketik.
+    if not _HOSTNAME.match(value) or value.replace(".", "").isdigit():
+        raise ValueError("Host Modbus harus berupa alamat IP atau hostname yang valid")
+    return value
+
+
+def _validate_model(value: str | None) -> str | None:
+    from app.acquisition.profiles import PROFILES
+
+    if value is not None and value not in PROFILES:
+        raise ValueError(f"Model tidak dikenal. Pilihan: {', '.join(PROFILES)}")
+    return value
+
+
+def _strip_optional(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return value.strip() or None
+
+
+class DeviceModelOut(CamelModel):
+    model: str
+    brand: str
+    label: str
+    capabilities: MeterCapabilities
+
+
+class DeviceConfigOut(CamelModel):
+    """Konfigurasi lengkap device untuk halaman admin (termasuk Modbus)."""
+
+    id: str
+    name: str
+    location: str | None = None
+    brand: str | None = None
+    model: str
+    role: str
+    transport: str | None = None
+    modbus_host: str | None = None
+    modbus_port: int
+    modbus_address: int | None = None
+    rated_power_kw: float | None = None
+    is_active: bool
+    last_seen: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class DeviceCreate(CamelModel):
+    device_code: str = Field(min_length=4, max_length=40, pattern=DEVICE_CODE_PATTERN)
+    name: str = Field(min_length=1, max_length=80)
+    location: str | None = Field(default=None, max_length=80)
+    model: str
+    role: DeviceRole
+    transport: Transport
+    modbus_host: str = Field(min_length=1, max_length=253)
+    modbus_port: int = Field(default=502, ge=1, le=65535)
+    modbus_address: int = Field(ge=1, le=247)
+    rated_power_kw: float | None = Field(default=None, gt=0, le=100_000)
+
+    @field_validator("device_code", mode="before")
+    @classmethod
+    def normalize_code(cls, value: str) -> str:
+        return value.strip().upper() if isinstance(value, str) else value
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        return _required_text(value, "Nama device")
+
+    @field_validator("location")
+    @classmethod
+    def strip_location(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+    @field_validator("model")
+    @classmethod
+    def known_model(cls, value: str) -> str:
+        return _validate_model(value)  # type: ignore[return-value]
+
+    @field_validator("modbus_host")
+    @classmethod
+    def valid_host(cls, value: str) -> str:
+        return _validate_host(value)  # type: ignore[return-value]
+
+
+class DeviceUpdate(CamelModel):
+    """Hanya field yang dikirim yang diubah. Kode device tidak bisa diubah."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    location: str | None = Field(default=None, max_length=80)
+    model: str | None = None
+    role: DeviceRole | None = None
+    transport: Transport | None = None
+    modbus_host: str | None = Field(default=None, min_length=1, max_length=253)
+    modbus_port: int | None = Field(default=None, ge=1, le=65535)
+    modbus_address: int | None = Field(default=None, ge=1, le=247)
+    rated_power_kw: float | None = Field(default=None, gt=0, le=100_000)
+    is_active: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str | None) -> str | None:
+        return None if value is None else _required_text(value, "Nama device")
+
+    @field_validator("location")
+    @classmethod
+    def strip_location(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+    @field_validator("model")
+    @classmethod
+    def known_model(cls, value: str | None) -> str | None:
+        return _validate_model(value)
+
+    @field_validator("modbus_host")
+    @classmethod
+    def valid_host(cls, value: str | None) -> str | None:
+        return _validate_host(value)

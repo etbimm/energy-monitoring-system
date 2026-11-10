@@ -40,6 +40,41 @@ docker compose up --build
 
 Mode akuisisi default: `simulator` (tanpa hardware). Set `ACQUISITION_MODE=modbus` di `.env` untuk poll meter sungguhan.
 
+## Login dan Hak Akses
+
+Semua halaman dashboard dan endpoint data wajib login. Akun dibuat oleh admin
+(tidak ada registrasi publik). Ada dua role:
+
+| Fitur | Viewer | Admin |
+|---|:-:|:-:|
+| Overview, Real-time, History, Power Quality, Devices, Alarms (lihat) | ✅ | ✅ |
+| Acknowledge alarm | ❌ | ✅ |
+| Kelola akun (tambah, ubah role, nonaktifkan, reset password) | ❌ | ✅ |
+| Kelola device (tambah, edit, nonaktifkan) | ❌ | ✅ |
+| Audit log | ❌ | ✅ |
+| Ganti password sendiri | ✅ | ✅ |
+
+1. Isi `JWT_SECRET` di `.env` (string acak >= 32 karakter), lalu
+   `docker compose up -d --build backend`.
+2. Buat admin pertama (password diketik di terminal, tidak tersimpan di repo):
+
+   ```bash
+   docker compose exec backend python -m app.cli create-admin
+   ```
+
+3. Login di dashboard, lalu buat akun lain lewat menu **Admin > Kelola Akun**.
+
+Lupa password admin: `docker compose exec backend python -m app.cli reset-password --username <nama>`.
+
+Sesi disimpan sebagai JWT di cookie httpOnly (`SameSite=Lax`). Karena itu
+**frontend dan backend harus diakses lewat host yang sama** (mis. keduanya
+`localhost`, atau keduanya `192.168.1.10`). Bila `NEXT_PUBLIC_API_URL` tidak
+diisi, frontend otomatis memakai host halaman dengan port 4000. Akses dari
+perangkat lain di LAN juga butuh origin tersebut di `CORS_ORIGINS`.
+
+Device yang dinonaktifkan tidak lagi dibaca akuisisi (paling lambat 60 detik)
+dan tidak tampil di dashboard, tetapi riwayat datanya tetap tersimpan.
+
 ## Menjalankan Frontend
 
 ```bash
@@ -71,6 +106,7 @@ dibuat. Untuk database yang sudah berjalan, jalankan file di
 docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/001-daily-energy-wib.sql
 docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/002-notification-state.sql
 docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/003-aggregates-compression-retention.sql
+docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/004-auth-device-management.sql
 ```
 
 Kebijakan penyimpanan: data mentah (`readings`, `phase_readings`) dikompresi

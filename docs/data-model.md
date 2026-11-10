@@ -38,7 +38,12 @@ Ringkasnya: PAC3220 & Elite440 = IEEE754 float, sisanya integer berskala
 | modbus_address | INT | slave id Modbus |
 | transport | TEXT | rs485 / ethernet |
 | capabilities | JSONB | kapabilitas efektif unit ini (per unit, bukan per model) |
-| is_active | BOOLEAN | masih dipakai atau tidak |
+| is_active | BOOLEAN | masih dipakai atau tidak (nonaktif = tidak dibaca & tidak tampil, riwayat tetap) |
+| updated_at | TIMESTAMPTZ | terakhir diubah lewat halaman Kelola Device |
+
+Alamat Modbus `(modbus_host, modbus_port, modbus_address)` unik di antara
+device aktif (index `uq_devices_modbus_active`). Device tidak pernah dihapus
+permanen karena `readings` dan `alarms` mereferensikannya.
 
 ### readings (hypertable)
 
@@ -92,6 +97,32 @@ Partition: 1 hari per chunk. Index `(device_id, time DESC)`.
 | message | TEXT | |
 | acknowledged | BOOLEAN | sudah di-ack oleh operator |
 | triggered_at | TIMESTAMPTZ | |
+
+### users
+
+| Kolom | Tipe | Keterangan |
+|---|---|---|
+| id | SERIAL PK | |
+| username | TEXT UNIQUE | huruf kecil, angka, `.`, `_`, `-` (3-32 karakter) |
+| password_hash | TEXT | hash Argon2 (password tidak pernah disimpan apa adanya) |
+| full_name | TEXT | nama tampilan |
+| role | TEXT | `admin` / `viewer` |
+| is_active | BOOLEAN | akun nonaktif tidak bisa login |
+| token_version | INT | dinaikkan saat password direset, role diubah, atau akun dinonaktifkan; sesi lama langsung tidak berlaku |
+| last_login_at | TIMESTAMPTZ | |
+| created_at / updated_at | TIMESTAMPTZ | |
+
+### audit_log
+
+| Kolom | Tipe | Keterangan |
+|---|---|---|
+| id | BIGSERIAL PK | |
+| user_id | INT FK users | pelaku (NULL bila lewat CLI / login gagal) |
+| username | TEXT | salinan username pelaku saat kejadian |
+| action | TEXT | mis. `auth.login`, `auth.login_failed`, `user.create`, `device.update`, `device.deactivate` |
+| target | TEXT | username / kode device yang dikenai aksi |
+| detail | JSONB | perubahan `{field: {from, to}}` atau info tambahan (IP) |
+| created_at | TIMESTAMPTZ | |
 
 ## Aturan Alarm (contoh, sesuaikan)
 

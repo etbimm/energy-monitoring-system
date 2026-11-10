@@ -24,6 +24,14 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
+    # Login: sesi disimpan sebagai JWT di cookie httpOnly. Bila JWT_SECRET
+    # kosong, secret acak dibuat saat start (semua sesi hilang tiap restart).
+    jwt_secret: str | None = None
+    jwt_expire_minutes: int = 480
+    session_cookie_name: str = "ems_session"
+    # True bila dashboard diakses lewat HTTPS.
+    cookie_secure: bool = False
+
     poll_interval: int = 5
     acquisition_mode: str = "simulator"  # simulator | modbus
     modbus_timeout: float = 2.0
@@ -39,7 +47,7 @@ class Settings(BaseSettings):
     offline_warning_seconds: int = 30
     offline_critical_seconds: int = 180
 
-    @field_validator("mqtt_username", "mqtt_password", "ingest_api_key", mode="before")
+    @field_validator("mqtt_username", "mqtt_password", "ingest_api_key", "jwt_secret", mode="before")
     @classmethod
     def empty_to_none(cls, value: str | None) -> str | None:
         if value == "":
@@ -62,6 +70,20 @@ class Settings(BaseSettings):
         from zoneinfo import ZoneInfo
 
         return ZoneInfo(self.timezone)
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def strong_jwt_secret(cls, value: str | None) -> str | None:
+        if value is not None and len(value) < 32:
+            raise ValueError("JWT_SECRET minimal 32 karakter")
+        return value
+
+    @field_validator("jwt_expire_minutes")
+    @classmethod
+    def positive_expiry(cls, value: int) -> int:
+        if value < 5:
+            raise ValueError("JWT_EXPIRE_MINUTES minimal 5")
+        return value
 
     @property
     def cors_origin_list(self) -> list[str]:

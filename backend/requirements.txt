@@ -10,3 +10,5 @@ aiomqtt==2.5.1
 pymodbus==3.16.2
 httpx==0.28.1
 tzdata==2026.6
+PyJWT==2.15.1
+argon2-cffi==25.1.0

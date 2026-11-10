@@ -72,7 +72,8 @@ async def ingest_telemetry(session: AsyncSession, payload: dict) -> dict | None:
     device = (
         await session.execute(select(Device).where(Device.device_code == code))
     ).scalar_one_or_none()
-    if device is None:
+    # Meter yang dinonaktifkan admin: data yang masih masuk diabaikan.
+    if device is None or not device.is_active:
         return None
 
     ts = _parse_time(payload.get("timestamp"))

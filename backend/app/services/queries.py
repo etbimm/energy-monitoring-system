@@ -88,6 +88,8 @@ async def list_devices(session: AsyncSession) -> list[DeviceOut]:
             .select_from(Device)
             .outerjoin(latest_reading, true())
             .outerjoin(open_alarm, Device.id == open_alarm.c.device_id)
+            # Meter nonaktif tidak tampil di monitoring (riwayatnya tetap ada).
+            .where(Device.is_active.is_(True))
             .order_by(Device.id)
         )
     ).all()

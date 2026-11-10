@@ -219,6 +219,61 @@ DEVICE_MODEL: dict[str, str] = {
 }
 
 
+# Katalog model untuk form "Tambah device": label merek (kolom devices.brand)
+# dan kapabilitas default (kolom devices.capabilities). Nilai sama dengan
+# seed database/init/02-seed-devices.sql. Kapabilitas THD tetap ditimpa oleh
+# register_capabilities() saat ditampilkan.
+MODEL_CATALOG: dict[str, dict] = {
+    "SIEMENS PAC3220": {
+        "label": "SIEMENS PAC3220",
+        "capabilities": {
+            "perPhase": True, "apparentEnergyRegister": True, "thdCurrent": True,
+            "thdVoltage": True, "maxHarmonicOrder": 40, "unbalance": True,
+            "reactiveEnergy": True, "demand": True,
+        },
+    },
+    "LOVATO DMG510": {
+        "label": "LOVATO DMG510",
+        "capabilities": {
+            "perPhase": True, "apparentEnergyRegister": False, "thdCurrent": True,
+            "thdVoltage": True, "maxHarmonicOrder": 15, "unbalance": False,
+            "reactiveEnergy": True, "demand": True,
+        },
+    },
+    "CEWE Elite440": {
+        "label": "CEWE Elite440",
+        "capabilities": {
+            "perPhase": True, "apparentEnergyRegister": False, "thdCurrent": True,
+            "thdVoltage": True, "maxHarmonicOrder": 31, "unbalance": False,
+            "reactiveEnergy": True, "demand": True,
+        },
+    },
+    "ACREL AMC96": {
+        "label": "Acrel AMC96",
+        "capabilities": {
+            "perPhase": True, "apparentEnergyRegister": False, "thdCurrent": True,
+            "thdVoltage": True, "maxHarmonicOrder": 31, "unbalance": False,
+            "reactiveEnergy": True, "demand": False,
+        },
+    },
+    "WEIDMULLER EM220": {
+        "label": "Weidmuller EM220",
+        "capabilities": {
+            "perPhase": True, "apparentEnergyRegister": False, "thdCurrent": True,
+            "thdVoltage": False, "maxHarmonicOrder": 0, "unbalance": False,
+            "reactiveEnergy": True, "demand": True,
+        },
+    },
+}
+
+
+def default_capabilities(model: str) -> dict:
+    """Kapabilitas awal device baru berdasarkan model (salinan, aman diubah)."""
+    entry = MODEL_CATALOG.get(model)
+    caps = dict(entry["capabilities"]) if entry else {}
+    return {**caps, **register_capabilities(model)}
+
+
 def register_capabilities(model: str) -> dict[str, bool]:
     """Kapabilitas THD yang diturunkan dari register profil meter.
 

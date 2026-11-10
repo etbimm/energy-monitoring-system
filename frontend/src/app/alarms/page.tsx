@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useAuth } from "@/components/auth/auth-provider";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { DataState } from "@/components/ui/data-state";
@@ -33,6 +34,7 @@ function getDemoAlarms(current: Alarm[]) {
 }
 
 export default function AlarmsPage() {
+  const { isAdmin } = useAuth();
   const [alarms, setAlarms] = useState<Alarm[]>(DEMO_MODE ? ALARMS : []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -129,7 +131,8 @@ export default function AlarmsPage() {
                   </span>
                 </div>
               </div>
-              {!alarm.acknowledged ? (
+              {/* Acknowledge hanya untuk admin (backend juga menolak viewer). */}
+              {!alarm.acknowledged && (isAdmin || isDemo) ? (
                 <button
                   type="button"
                   disabled={pendingId === alarm.id}

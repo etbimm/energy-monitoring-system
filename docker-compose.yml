@@ -68,6 +68,9 @@ services:
       POLL_INTERVAL: ${POLL_INTERVAL:-5}
       INGEST_API_KEY: ${INGEST_API_KEY:-}
       TIMEZONE: ${TIMEZONE:-Asia/Jakarta}
+      JWT_SECRET: ${JWT_SECRET:-}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-480}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
 
   acquisition:
     build: ./backend

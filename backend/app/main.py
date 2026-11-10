@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import api_router
+from app.api.deps import user_from_token
 from app.config import get_settings
 from app.db import SessionLocal, get_session
 from app.models import Device
@@ -133,8 +134,22 @@ async def ingest(payload: TelemetryIn, session: AsyncSession = Depends(get_sessi
     return {"ok": True}
 
 
+def websocket_origin_allowed(origin: str | None) -> bool:
+    """Tolak WebSocket dari situs lain (browser tetap mengirim cookie sesi)."""
+    return origin is None or origin in settings.cors_origin_list
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
+    # Data realtime juga wajib login: cek Origin dan cookie sesi sebelum accept.
+    if not websocket_origin_allowed(ws.headers.get("origin")):
+        await ws.close(code=1008)
+        return
+    async with SessionLocal() as session:
+        user = await user_from_token(session, ws.cookies.get(settings.session_cookie_name))
+    if user is None:
+        await ws.close(code=1008)
+        return
     await hub.connect(ws)
     try:
         while True:

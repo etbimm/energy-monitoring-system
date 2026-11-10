@@ -1,32 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import {
-  Activity,
-  BarChart3,
-  Gauge,
-  LayoutDashboard,
-  Menu,
-  X,
-  Siren,
-  Cpu,
-  Waves,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
-
-const NAV_ITEMS = [
-  { href: "/", label: "Overview", icon: LayoutDashboard },
-  { href: "/realtime", label: "Real-time", icon: Activity },
-  { href: "/history", label: "History", icon: BarChart3 },
-  { href: "/power-quality", label: "Power Quality", icon: Waves },
-  { href: "/devices", label: "Devices", icon: Cpu },
-  { href: "/alarms", label: "Alarms", icon: Siren },
-];
+import { Menu, X } from "lucide-react";
+import { NavLinks, UserPanel } from "@/components/layout/nav-links";
 
 export function MobileNav() {
-  const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -100,37 +78,8 @@ export function MobileNav() {
               </button>
             </div>
 
-            <nav aria-label="Navigasi utama" className="mt-2 flex-1 space-y-1 overflow-y-auto px-3">
-              {NAV_ITEMS.map((item) => {
-                const active = pathname === item.href;
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    aria-current={active ? "page" : undefined}
-                    onClick={() => setIsOpen(false)}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors",
-                      active
-                        ? "border-[#d3a52c] bg-brand-700 text-white"
-                        : "border-transparent text-white/85 hover:bg-brand-700 hover:text-white",
-                    )}
-                  >
-                    <Icon className="h-4 w-4" aria-hidden />
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </nav>
-
-            <div className="m-3 rounded-lg border border-white/25 bg-brand-900 px-3 py-3 text-white">
-              <div className="flex items-center gap-2 text-xs font-medium">
-                <Gauge className="h-3.5 w-3.5 text-[#e2bd43]" aria-hidden />
-                <span>System normal</span>
-              </div>
-              <p className="mt-1 text-[11px] text-white/70">v0.1.0 - mock data</p>
-            </div>
+            <NavLinks onNavigate={() => setIsOpen(false)} />
+            <UserPanel onNavigate={() => setIsOpen(false)} />
           </aside>
         </div>
       )}

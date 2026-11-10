@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Double, ForeignKey, Integer, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, Double, ForeignKey, Integer, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -25,7 +25,10 @@ class Device(Base):
     rated_power_kw: Mapped[float | None] = mapped_column(Double)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     readings = relationship("Reading", back_populates="device")
     alarms = relationship("Alarm", back_populates="device")
@@ -84,3 +87,32 @@ class Alarm(Base):
     cleared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     device = relationship("Device", back_populates="alarms")
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(Text, unique=True)
+    password_hash: Mapped[str] = mapped_column(Text)
+    full_name: Mapped[str] = mapped_column(Text)
+    role: Mapped[str] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    token_version: Mapped[int] = mapped_column(Integer, default=0)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    username: Mapped[str | None] = mapped_column(Text)
+    action: Mapped[str] = mapped_column(Text)
+    target: Mapped[str | None] = mapped_column(Text)
+    detail: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

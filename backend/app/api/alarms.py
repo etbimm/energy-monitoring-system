@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import require_admin
 from app.db import get_session
 from app.models import Alarm
 from app.schemas import AlarmOut
@@ -20,7 +21,11 @@ async def get_alarms(
     return await list_alarms(session, include_cleared=include_cleared)
 
 
-@router.post("/alarms/{alarm_id}/acknowledge", response_model=AlarmOut)
+@router.post(
+    "/alarms/{alarm_id}/acknowledge",
+    response_model=AlarmOut,
+    dependencies=[Depends(require_admin)],
+)
 async def acknowledge_alarm(alarm_id: int, session: AsyncSession = Depends(get_session)) -> AlarmOut:
     alarm = (await session.execute(select(Alarm).where(Alarm.id == alarm_id))).scalar_one_or_none()
     if alarm is None:
