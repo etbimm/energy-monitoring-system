@@ -81,6 +81,11 @@ belum terbaca di mode `modbus` dan tampil offline (ditandai "Belum didukung").
 Agar terbaca, tambahkan profilnya di `backend/app/acquisition/profiles.py`
 (`PROFILES` dan `MODEL_CATALOG`) dengan nama model yang sama persis.
 
+Kolom **Peran** dan **Jalur** juga punya pilihan **Lainnya**. Hanya peran
+`Incoming` yang dihitung ke total daya dan energi pabrik; peran lain (mis.
+Genset, Solar PV) tampil di dashboard tetapi tidak ikut total. Jalur hanya
+informasi: akuisisi selalu membaca lewat Modbus TCP ke Host:Port device.
+
 ## Menjalankan Frontend
 
 ```bash
@@ -113,6 +118,7 @@ docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/001-daily-energ
 docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/002-notification-state.sql
 docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/003-aggregates-compression-retention.sql
 docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/004-auth-device-management.sql
+docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/005-device-role-transport-lainnya.sql
 ```
 
 Kebijakan penyimpanan: data mentah (`readings`, `phase_readings`) dikompresi

@@ -10,28 +10,74 @@ import {
   createDevice,
   listDeviceConfigs,
   listDeviceModels,
+  listDeviceOptions,
   updateDevice,
   type DeviceConfig,
   type DeviceInput,
   type DeviceModelOption,
+  type DeviceOptions,
   type Transport,
 } from "@/lib/auth-api";
 import { formatDateTime } from "@/lib/format";
-import type { MeterRole } from "@/lib/types";
-
-const ROLE_LABEL: Record<MeterRole, string> = {
+const ROLE_LABEL: Record<string, string> = {
   incoming: "Incoming",
   outcoming: "Outcoming",
   distribution: "Distribution",
 };
 
-const TRANSPORT_LABEL: Record<Transport, string> = {
+const TRANSPORT_LABEL: Record<string, string> = {
   rs485: "RS485 via gateway",
   ethernet: "Ethernet (Modbus TCP)",
 };
 
-/** Nilai select untuk opsi "Lainnya" (model baru yang diketik admin). */
+/** Nilai select untuk opsi "Lainnya" (nilai baru yang diketik admin). */
 const OTHER_MODEL = "__other__";
+const OTHER = "__other__";
+
+const EMPTY_OPTIONS: DeviceOptions = { customRoles: [], customTransports: [] };
+
+/**
+ * Select dengan pilihan bawaan, nilai "Lainnya" yang sudah pernah dipakai,
+ * dan opsi "Lainnya..." untuk mengetik nilai baru.
+ */
+function ChoiceSelect({
+  id,
+  value,
+  onChange,
+  known,
+  custom,
+  customGroupLabel,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  known: Record<string, string>;
+  custom: string[];
+  customGroupLabel: string;
+}) {
+  // Nilai lama yang belum ada di daftar (mis. baru disimpan) tetap tampil.
+  const extra = [...custom];
+  if (value !== OTHER && !(value in known) && value && !extra.includes(value)) extra.push(value);
+  return (
+    <select id={id} value={value} onChange={(event) => onChange(event.target.value)} className={inputClass}>
+      {Object.entries(known).map(([key, label]) => (
+        <option key={key} value={key}>
+          {label}
+        </option>
+      ))}
+      {extra.length > 0 ? (
+        <optgroup label={customGroupLabel}>
+          {extra.map((item) => (
+            <option key={item} value={item}>
+              {item}
+            </option>
+          ))}
+        </optgroup>
+      ) : null}
+      <option value={OTHER}>Lainnya...</option>
+    </select>
+  );
+}
 
 interface FormState {
   deviceCode: string;
@@ -43,8 +89,14 @@ interface FormState {
   customModel: string;
   /** Merek, wajib untuk model yang belum punya profil register. */
   brand: string;
-  role: MeterRole;
+  /** Peran terpilih, atau OTHER. */
+  role: string;
+  /** Peran baru bila memilih "Lainnya". */
+  customRole: string;
+  /** Jalur terpilih, atau OTHER. */
   transport: Transport;
+  /** Jalur baru bila memilih "Lainnya". */
+  customTransport: string;
   modbusHost: string;
   modbusPort: string;
   modbusAddress: string;
@@ -60,7 +112,9 @@ function toForm(device?: DeviceConfig, defaultModel = ""): FormState {
     customModel: "",
     brand: device && !device.profileSupported ? (device.brand ?? "") : "",
     role: device?.role ?? "distribution",
+    customRole: "",
     transport: device?.transport ?? "rs485",
+    customTransport: "",
     modbusHost: device?.modbusHost ?? "",
     modbusPort: String(device?.modbusPort ?? 502),
     modbusAddress: device?.modbusAddress != null ? String(device.modbusAddress) : "1",
@@ -72,6 +126,14 @@ function effectiveModel(form: FormState): string {
   return form.model === OTHER_MODEL ? form.customModel.trim() : form.model;
 }
 
+function effectiveRole(form: FormState): string {
+  return form.role === OTHER ? form.customRole.trim() : form.role;
+}
+
+function effectiveTransport(form: FormState): string {
+  return form.transport === OTHER ? form.customTransport.trim() : form.transport;
+}
+
 function toInput(form: FormState, supported: boolean): DeviceInput {
   return {
     name: form.name.trim(),
@@ -79,8 +141,8 @@ function toInput(form: FormState, supported: boolean): DeviceInput {
     model: effectiveModel(form),
     // Merek hanya dikirim untuk model "Lainnya"; model dikenal pakai katalog.
     brand: supported ? undefined : form.brand.trim(),
-    role: form.role,
-    transport: form.transport,
+    role: effectiveRole(form),
+    transport: effectiveTransport(form),
     modbusHost: form.modbusHost.trim(),
     modbusPort: Number(form.modbusPort),
     modbusAddress: Number(form.modbusAddress),
@@ -91,11 +153,13 @@ function toInput(form: FormState, supported: boolean): DeviceInput {
 function DeviceForm({
   device,
   models,
+  options,
   onSaved,
   onCancel,
 }: {
   device?: DeviceConfig;
   models: DeviceModelOption[];
+  options: DeviceOptions;
   onSaved: (device: DeviceConfig) => void;
   onCancel: () => void;
 }) {
@@ -129,6 +193,14 @@ function DeviceForm({
     }
     if (!supported && !form.brand.trim()) {
       setError("Merek wajib diisi untuk model di luar daftar.");
+      return;
+    }
+    if (form.role === OTHER && !form.customRole.trim()) {
+      setError("Peran wajib diisi untuk pilihan Lainnya.");
+      return;
+    }
+    if (form.transport === OTHER && !form.customTransport.trim()) {
+      setError("Jalur wajib diisi untuk pilihan Lainnya.");
       return;
     }
     if (device && device.model !== effectiveModel(form)) {
@@ -193,20 +265,36 @@ function DeviceForm({
             className={inputClass}
           />
         </Field>
-        <Field label="Peran" htmlFor="dev-role" hint="Incoming dipakai untuk total daya & energi pabrik.">
-          <select
+        <Field
+          label="Peran"
+          htmlFor="dev-role"
+          hint={
+            form.role === "incoming"
+              ? "Incoming dihitung ke total daya & energi pabrik."
+              : "Hanya Incoming yang dihitung ke total daya & energi pabrik."
+          }
+        >
+          <ChoiceSelect
             id="dev-role"
             value={form.role}
-            onChange={(event) => set("role", event.target.value as MeterRole)}
-            className={inputClass}
-          >
-            {Object.entries(ROLE_LABEL).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
+            onChange={(value) => set("role", value)}
+            known={ROLE_LABEL}
+            custom={options.customRoles}
+            customGroupLabel="Peran lain yang pernah dipakai"
+          />
         </Field>
+        {form.role === OTHER ? (
+          <Field label="Peran lainnya" htmlFor="dev-custom-role" hint="mis. Genset, Solar PV, Feeder">
+            <input
+              id="dev-custom-role"
+              value={form.customRole}
+              required
+              maxLength={40}
+              onChange={(event) => set("customRole", event.target.value)}
+              className={inputClass}
+            />
+          </Field>
+        ) : null}
         <Field
           label="Model meter"
           htmlFor="dev-model"
@@ -291,24 +379,46 @@ function DeviceForm({
 
       <fieldset className="grid gap-3 sm:grid-cols-2">
         <legend className="mb-2 text-xs font-bold uppercase tracking-wider text-brand-700">Koneksi Modbus</legend>
-        <Field label="Jalur" htmlFor="dev-transport">
-          <select
+        <Field
+          label="Jalur"
+          htmlFor="dev-transport"
+          hint={
+            form.transport in TRANSPORT_LABEL
+              ? undefined
+              : "Hanya informasi: akuisisi tetap membaca lewat Modbus TCP ke Host:Port."
+          }
+        >
+          <ChoiceSelect
             id="dev-transport"
             value={form.transport}
-            onChange={(event) => set("transport", event.target.value as Transport)}
-            className={inputClass}
-          >
-            {Object.entries(TRANSPORT_LABEL).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
+            onChange={(value) => set("transport", value)}
+            known={TRANSPORT_LABEL}
+            custom={options.customTransports}
+            customGroupLabel="Jalur lain yang pernah dipakai"
+          />
         </Field>
+        {form.transport === OTHER ? (
+          <Field label="Jalur lainnya" htmlFor="dev-custom-transport" hint="mis. Modbus RTU via USB, Fiber optik">
+            <input
+              id="dev-custom-transport"
+              value={form.customTransport}
+              required
+              maxLength={40}
+              onChange={(event) => set("customTransport", event.target.value)}
+              className={inputClass}
+            />
+          </Field>
+        ) : null}
         <Field
           label="Host / IP"
           htmlFor="dev-host"
-          hint={form.transport === "rs485" ? "IP gateway RS485-to-Ethernet." : "IP power meter."}
+          hint={
+            form.transport === "rs485"
+              ? "IP gateway RS485-to-Ethernet."
+              : form.transport === "ethernet"
+                ? "IP power meter."
+                : "IP power meter atau gateway Modbus TCP."
+          }
         >
           <input
             id="dev-host"
@@ -364,6 +474,7 @@ function DeviceForm({
 function DevicesManager() {
   const [devices, setDevices] = useState<DeviceConfig[]>([]);
   const [models, setModels] = useState<DeviceModelOption[]>([]);
+  const [options, setOptions] = useState<DeviceOptions>(EMPTY_OPTIONS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -374,9 +485,14 @@ function DevicesManager() {
 
   const refresh = useCallback(async () => {
     try {
-      const [nextDevices, nextModels] = await Promise.all([listDeviceConfigs(), listDeviceModels()]);
+      const [nextDevices, nextModels, nextOptions] = await Promise.all([
+        listDeviceConfigs(),
+        listDeviceModels(),
+        listDeviceOptions(),
+      ]);
       setDevices(nextDevices);
       setModels(nextModels);
+      setOptions(nextOptions);
       setError(null);
     } catch (cause) {
       setError(errorMessage(cause, "Gagal memuat daftar device."));
@@ -577,9 +693,12 @@ function DevicesManager() {
             key={editing === "new" ? "new" : editing.id}
             device={editing === "new" ? undefined : editing}
             models={models}
+            options={options}
             onCancel={() => setEditing(null)}
             onSaved={(saved) => {
               upsert(saved);
+              // Muat ulang agar model/peran/jalur "Lainnya" baru muncul di pilihan.
+              void refresh();
               setNotice(editing === "new" ? `${saved.id} berhasil ditambahkan.` : `${saved.id} diperbarui.`);
               setEditing(null);
             }}

@@ -224,8 +224,38 @@ class AuditLogOut(CamelModel):
 # ---------------------------------------------------------------------------
 
 DEVICE_CODE_PATTERN = r"^PM-[A-Z0-9]+(-[A-Z0-9]+)*$"
-DeviceRole = Literal["incoming", "outcoming", "distribution"]
-Transport = Literal["rs485", "ethernet"]
+# Pilihan bawaan. Nilai lain ("Lainnya") diperbolehkan, maks. 40 karakter.
+KNOWN_ROLES = ("incoming", "outcoming", "distribution")
+KNOWN_TRANSPORTS = ("rs485", "ethernet")
+
+
+def _clean_choice(value: str | None, known: tuple[str, ...], label: str) -> str | None:
+    """Rapikan nilai pilihan bebas.
+
+    Nilai yang sama dengan pilihan bawaan (abaikan huruf besar/kecil, spasi,
+    dan tanda hubung, mis. "RS-485" atau "Incoming") disimpan sebagai kode
+    bawaannya, agar logika seperti total daya 'incoming' tetap berlaku.
+    """
+    if value is None:
+        return None
+    value = " ".join(value.split())
+    if not value:
+        raise ValueError(f"{label} wajib diisi")
+    if len(value) > 40:
+        raise ValueError(f"{label} maksimal 40 karakter")
+    key = "".join(ch for ch in value.casefold() if ch.isalnum())
+    for item in known:
+        if key == item:
+            return item
+    return value
+
+
+def clean_role(value: str | None) -> str | None:
+    return _clean_choice(value, KNOWN_ROLES, "Peran")
+
+
+def clean_transport(value: str | None) -> str | None:
+    return _clean_choice(value, KNOWN_TRANSPORTS, "Jalur")
 _HOSTNAME = re.compile(
     r"^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
     r"(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$"
@@ -293,6 +323,14 @@ class DeviceModelOut(CamelModel):
     supported: bool = True
 
 
+class DeviceOptionsOut(CamelModel):
+    """Pilihan Peran & Jalur untuk form: bawaan + nilai "Lainnya" yang
+    sudah pernah dipakai device (agar bisa dipilih ulang)."""
+
+    custom_roles: list[str] = Field(default_factory=list)
+    custom_transports: list[str] = Field(default_factory=list)
+
+
 class DeviceConfigOut(CamelModel):
     """Konfigurasi lengkap device untuk halaman admin (termasuk Modbus)."""
 
@@ -321,8 +359,8 @@ class DeviceCreate(CamelModel):
     model: str
     # Wajib untuk model "Lainnya"; untuk model yang dikenal diisi otomatis.
     brand: str | None = None
-    role: DeviceRole
-    transport: Transport
+    role: str
+    transport: str
     modbus_host: str = Field(min_length=1, max_length=253)
     modbus_port: int = Field(default=502, ge=1, le=65535)
     modbus_address: int = Field(ge=1, le=247)
@@ -353,6 +391,16 @@ class DeviceCreate(CamelModel):
     def clean_brand(cls, value: str | None) -> str | None:
         return _validate_brand(value)
 
+    @field_validator("role")
+    @classmethod
+    def valid_role(cls, value: str) -> str:
+        return clean_role(value)  # type: ignore[return-value]
+
+    @field_validator("transport")
+    @classmethod
+    def valid_transport(cls, value: str) -> str:
+        return clean_transport(value)  # type: ignore[return-value]
+
     @field_validator("modbus_host")
     @classmethod
     def valid_host(cls, value: str) -> str:
@@ -366,8 +414,8 @@ class DeviceUpdate(CamelModel):
     location: str | None = Field(default=None, max_length=80)
     model: str | None = None
     brand: str | None = None
-    role: DeviceRole | None = None
-    transport: Transport | None = None
+    role: str | None = None
+    transport: str | None = None
     modbus_host: str | None = Field(default=None, min_length=1, max_length=253)
     modbus_port: int | None = Field(default=None, ge=1, le=65535)
     modbus_address: int | None = Field(default=None, ge=1, le=247)
@@ -393,6 +441,16 @@ class DeviceUpdate(CamelModel):
     @classmethod
     def clean_brand(cls, value: str | None) -> str | None:
         return _validate_brand(value)
+
+    @field_validator("role")
+    @classmethod
+    def valid_role(cls, value: str | None) -> str | None:
+        return clean_role(value)
+
+    @field_validator("transport")
+    @classmethod
+    def valid_transport(cls, value: str | None) -> str | None:
+        return clean_transport(value)
 
     @field_validator("modbus_host")
     @classmethod

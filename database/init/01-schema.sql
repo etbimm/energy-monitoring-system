@@ -11,11 +11,15 @@ CREATE TABLE IF NOT EXISTS devices (
   location        TEXT,
   brand           TEXT,
   model           TEXT NOT NULL,
-  role            TEXT NOT NULL CHECK (role IN ('incoming', 'outcoming', 'distribution')),
+  -- incoming / outcoming / distribution, atau peran lain dari pilihan
+  -- "Lainnya". Hanya 'incoming' yang dihitung ke total daya & energi pabrik.
+  role            TEXT NOT NULL CHECK (length(btrim(role)) BETWEEN 1 AND 40),
   modbus_host     TEXT,
   modbus_port     INTEGER NOT NULL DEFAULT 502,
   modbus_address  INTEGER,
-  transport       TEXT CHECK (transport IN ('rs485', 'ethernet')),
+  -- rs485 / ethernet, atau jalur lain dari pilihan "Lainnya" (informasi;
+  -- akuisisi selalu membaca lewat Modbus TCP ke modbus_host:modbus_port).
+  transport       TEXT CHECK (transport IS NULL OR length(btrim(transport)) BETWEEN 1 AND 40),
   capabilities    JSONB NOT NULL DEFAULT '{}'::jsonb,
   rated_power_kw  DOUBLE PRECISION,
   is_active       BOOLEAN NOT NULL DEFAULT TRUE,

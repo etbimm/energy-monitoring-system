@@ -42,8 +42,9 @@ def test_valid_device_is_normalized():
         {"name": "   "},
         {"model": "   "},
         {"model": "X" * 61},
-        {"role": "utama"},
-        {"transport": "wifi"},
+        {"role": "   "},
+        {"role": "R" * 41},
+        {"transport": ""},
         {"modbusHost": "192.168.10.300"},
         {"modbusHost": "host dengan spasi"},
         {"modbusAddress": 0},
@@ -107,3 +108,27 @@ def test_custom_model_gets_conservative_capabilities():
     assert caps == CUSTOM_MODEL_CAPABILITIES
     assert caps is not CUSTOM_MODEL_CAPABILITIES
     assert caps["thdCurrent"] is False and caps["maxHarmonicOrder"] == 0
+
+
+@pytest.mark.parametrize(
+    ("role", "expected"),
+    [("Incoming", "incoming"), (" OUTCOMING ", "outcoming"), ("Distribution", "distribution"),
+     ("  Genset   Cadangan ", "Genset Cadangan"), ("Solar PV", "Solar PV")],
+)
+def test_role_lainnya_and_known_normalized(role, expected):
+    assert make(role=role).role == expected
+
+
+@pytest.mark.parametrize(
+    ("transport", "expected"),
+    [("RS-485", "rs485"), ("rs 485", "rs485"), ("Ethernet", "ethernet"),
+     ("Modbus RTU via USB", "Modbus RTU via USB"), ("Wi-Fi", "Wi-Fi")],
+)
+def test_transport_lainnya_and_known_normalized(transport, expected):
+    assert make(transport=transport).transport == expected
+
+
+def test_update_role_transport_cleaned():
+    update = DeviceUpdate.model_validate({"role": "INCOMING", "transport": " Fiber  optik "})
+    assert update.role == "incoming"
+    assert update.transport == "Fiber optik"

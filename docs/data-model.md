@@ -33,10 +33,10 @@ Ringkasnya: PAC3220 & Elite440 = IEEE754 float, sisanya integer berskala
 | location | TEXT | lokasi / zona (LVMDP, MCC 1, MCC Pellet 2, ...) |
 | brand | TEXT | merk power meter |
 | model | TEXT | SIEMENS PAC3220 / LOVATO DMG510 / CEWE Elite440 / ACREL AMC96 / WEIDMULLER EM220 |
-| role | TEXT | incoming / outcoming / distribution |
+| role | TEXT | incoming / outcoming / distribution, atau peran "Lainnya" (maks 40 karakter). Hanya `incoming` yang dihitung ke total pabrik |
 | modbus_host | TEXT | IP meter atau RS485-to-Ethernet converter |
 | modbus_address | INT | slave id Modbus |
-| transport | TEXT | rs485 / ethernet |
+| transport | TEXT | rs485 / ethernet, atau jalur "Lainnya" (informasi; akuisisi selalu Modbus TCP ke host:port) |
 | capabilities | JSONB | kapabilitas efektif unit ini (per unit, bukan per model) |
 | is_active | BOOLEAN | masih dipakai atau tidak (nonaktif = tidak dibaca & tidak tampil, riwayat tetap) |
 | updated_at | TIMESTAMPTZ | terakhir diubah lewat halaman Kelola Device |

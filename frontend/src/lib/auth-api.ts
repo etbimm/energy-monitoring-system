@@ -1,5 +1,5 @@
 import { request } from "@/lib/api";
-import type { MeterCapabilities, MeterRole } from "@/lib/types";
+import type { MeterCapabilities } from "@/lib/types";
 
 export type UserRole = "admin" | "viewer";
 
@@ -79,7 +79,10 @@ export function resetUserPassword(id: number, password: string) {
 /* Admin: device                                                       */
 /* ------------------------------------------------------------------ */
 
-export type Transport = "rs485" | "ethernet";
+/** Jalur bawaan; nilai lain berasal dari pilihan "Lainnya". */
+export type Transport = "rs485" | "ethernet" | (string & {});
+/** Peran bawaan (incoming/outcoming/distribution) atau peran "Lainnya". */
+export type DeviceRole = "incoming" | "outcoming" | "distribution" | (string & {});
 
 export interface DeviceModelOption {
   model: string;
@@ -96,7 +99,7 @@ export interface DeviceConfig {
   location: string | null;
   brand: string | null;
   model: string;
-  role: MeterRole;
+  role: DeviceRole;
   transport: Transport | null;
   modbusHost: string | null;
   modbusPort: number;
@@ -116,12 +119,22 @@ export interface DeviceInput {
   model: string;
   /** Wajib untuk model "Lainnya"; diabaikan backend untuk model yang dikenal. */
   brand?: string;
-  role: MeterRole;
+  role: DeviceRole;
   transport: Transport;
   modbusHost: string;
   modbusPort: number;
   modbusAddress: number;
   ratedPowerKw: number | null;
+}
+
+/** Peran & jalur "Lainnya" yang sudah pernah dipakai device. */
+export interface DeviceOptions {
+  customRoles: string[];
+  customTransports: string[];
+}
+
+export function listDeviceOptions(): Promise<DeviceOptions> {
+  return request("/api/admin/device-options");
 }
 
 export function listDeviceModels(): Promise<DeviceModelOption[]> {

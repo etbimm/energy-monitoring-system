@@ -23,7 +23,10 @@ from app.schemas import (
     DeviceConfigOut,
     DeviceCreate,
     DeviceModelOut,
+    DeviceOptionsOut,
     DeviceUpdate,
+    KNOWN_ROLES,
+    KNOWN_TRANSPORTS,
     MeterCapabilities,
     PasswordReset,
     UserCreate,
@@ -265,6 +268,24 @@ async def device_models(session: AsyncSession = Depends(get_session)) -> list[De
             )
         )
     return options
+
+
+@router.get("/device-options", response_model=DeviceOptionsOut)
+async def device_options(session: AsyncSession = Depends(get_session)) -> DeviceOptionsOut:
+    roles = (
+        await session.execute(
+            select(Device.role).where(Device.role.not_in(KNOWN_ROLES)).distinct().order_by(Device.role)
+        )
+    ).scalars().all()
+    transports = (
+        await session.execute(
+            select(Device.transport)
+            .where(Device.transport.is_not(None), Device.transport.not_in(KNOWN_TRANSPORTS))
+            .distinct()
+            .order_by(Device.transport)
+        )
+    ).scalars().all()
+    return DeviceOptionsOut(custom_roles=list(roles), custom_transports=list(transports))
 
 
 @router.get("/devices", response_model=list[DeviceConfigOut])

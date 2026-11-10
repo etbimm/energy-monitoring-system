@@ -85,7 +85,8 @@ export interface Device {
   brand: string; // Merk power meter
   /** Model dari daftar, atau model "Lainnya" yang ditambahkan admin. */
   model: MeterModel | (string & {});
-  role: MeterRole;
+  /** Peran bawaan, atau peran "Lainnya" (tidak dihitung ke total pabrik). */
+  role: MeterRole | (string & {});
   status: DeviceStatus;
   capabilities: MeterCapabilities;
 
