@@ -154,6 +154,36 @@ async def reset_password(
     return {"ok": True}
 
 
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: int,
+    admin: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, bool]:
+    """Hapus akun permanen.
+
+    Riwayat audit log tetap ada: kolom username menyimpan salinan nama, dan
+    user_id otomatis menjadi NULL (FK ON DELETE SET NULL). Sesi akun yang
+    dihapus langsung tidak berlaku karena user tidak ditemukan lagi.
+    """
+    user = await _get_user(session, user_id)
+    if user.id == admin.id:
+        raise HTTPException(status_code=400, detail="Anda tidak bisa menghapus akun sendiri.")
+    if user.role == "admin" and user.is_active and await _active_admin_count(session) <= 1:
+        raise HTTPException(status_code=400, detail="Harus ada minimal satu admin aktif.")
+
+    audit.record(
+        session,
+        admin,
+        "user.delete",
+        user.username,
+        {"full_name": user.full_name, "role": user.role, "was_active": user.is_active},
+    )
+    await session.delete(user)
+    await session.commit()
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------------------
 # Device
 # ---------------------------------------------------------------------------

@@ -75,6 +75,11 @@ export function resetUserPassword(id: number, password: string) {
   });
 }
 
+/** Hapus akun permanen (riwayat di audit log tetap tersimpan). */
+export function deleteUser(id: number) {
+  return request<{ ok: boolean }>(`/api/admin/users/${id}`, { method: "DELETE" });
+}
+
 /* ------------------------------------------------------------------ */
 /* Admin: device                                                       */
 /* ------------------------------------------------------------------ */

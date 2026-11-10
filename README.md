@@ -49,7 +49,7 @@ Semua halaman dashboard dan endpoint data wajib login. Akun dibuat oleh admin
 |---|:-:|:-:|
 | Overview, Real-time, History, Power Quality, Devices, Alarms (lihat) | ✅ | ✅ |
 | Acknowledge alarm | ❌ | ✅ |
-| Kelola akun (tambah, ubah role, nonaktifkan, reset password) | ❌ | ✅ |
+| Kelola akun (tambah, ubah role, nonaktifkan, hapus, reset password) | ❌ | ✅ |
 | Kelola device (tambah, edit, nonaktifkan) | ❌ | ✅ |
 | Audit log | ❌ | ✅ |
 | Ganti password sendiri | ✅ | ✅ |

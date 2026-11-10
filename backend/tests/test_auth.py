@@ -113,6 +113,7 @@ async def test_user_from_token_checks_active_and_version(monkeypatch):
         ("post", "/api/alarms/1/acknowledge"),
         ("get", "/api/auth/me"),
         ("get", "/api/admin/users"),
+        ("delete", "/api/admin/users/1"),
         ("get", "/api/admin/devices"),
         ("post", "/api/admin/devices"),
         ("patch", "/api/admin/devices/PM-MCC1-01"),

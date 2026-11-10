@@ -16,6 +16,7 @@ const ACTION_LABEL: Record<string, string> = {
   "user.create": "Buat akun",
   "user.update": "Ubah akun",
   "user.reset_password": "Reset password",
+  "user.delete": "Hapus akun",
   "device.create": "Tambah device",
   "device.update": "Ubah device",
   "device.activate": "Aktifkan device",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { KeyRound, Pencil, Plus, UserCheck, UserX } from "lucide-react";
+import { AlertTriangle, KeyRound, Pencil, Plus, Trash2, UserCheck, UserX } from "lucide-react";
 import { AdminOnly } from "@/components/auth/admin-only";
 import { useAuth } from "@/components/auth/auth-provider";
 import { PageHeader } from "@/components/layout/page-header";
@@ -10,6 +10,7 @@ import { Alert, Button, Dialog, Field, errorMessage, inputClass } from "@/compon
 import {
   ROLE_LABEL,
   createUser,
+  deleteUser,
   listUsers,
   resetUserPassword,
   updateUser,
@@ -22,7 +23,80 @@ type DialogState =
   | { kind: "create" }
   | { kind: "edit"; user: User }
   | { kind: "password"; user: User }
+  | { kind: "delete"; user: User }
   | null;
+
+/** Konfirmasi hapus permanen: admin harus mengetik ulang username. */
+function DeleteUserForm({ user, onDone, onCancel }: { user: User; onDone: () => void; onCancel: () => void }) {
+  const [confirmText, setConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const matches = confirmText.trim().toLowerCase() === user.username;
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!matches) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await deleteUser(user.id);
+      onDone();
+    } catch (cause) {
+      setError(errorMessage(cause, "Gagal menghapus akun."));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3">
+      {error ? <Alert>{error}</Alert> : null}
+      <div className="flex gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+        <div className="space-y-1">
+          <p>
+            Akun <span className="font-semibold">{user.fullName}</span> (@{user.username}) akan{" "}
+            <strong>dihapus permanen</strong> dan tidak bisa dikembalikan. Pengguna ini langsung keluar dari
+            semua perangkat.
+          </p>
+          <p className="text-xs text-red-800">
+            Riwayat aktivitasnya di Audit Log tetap tersimpan. Bila mungkin dipakai lagi nanti, cukup
+            nonaktifkan akun.
+          </p>
+        </div>
+      </div>
+      <Field
+        label="Konfirmasi"
+        htmlFor="delete-confirm"
+        hint={
+          <>
+            Ketik username <span className="font-mono font-semibold text-stone-800">{user.username}</span> untuk
+            mengaktifkan tombol hapus.
+          </>
+        }
+      >
+        <input
+          id="delete-confirm"
+          value={confirmText}
+          placeholder={user.username}
+          autoComplete="off"
+          autoCapitalize="none"
+          onChange={(event) => setConfirmText(event.target.value)}
+          className={`${inputClass} font-mono`}
+        />
+      </Field>
+      <div className="flex justify-end gap-2 pt-2">
+        <Button variant="secondary" onClick={onCancel}>
+          Batal
+        </Button>
+        <Button type="submit" variant="danger" disabled={!matches || deleting}>
+          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+          {deleting ? "Menghapus..." : "Hapus permanen"}
+        </Button>
+      </div>
+    </form>
+  );
+}
 
 function RoleBadge({ role }: { role: UserRole }) {
   return (
@@ -255,7 +329,7 @@ function UsersManager() {
 
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
+          <table className="w-full min-w-[860px] text-left text-sm">
             <thead className="bg-stone-50 text-xs uppercase tracking-wide text-stone-500">
               <tr>
                 <th className="px-4 py-3">Nama</th>
@@ -323,6 +397,15 @@ function UsersManager() {
                             )}
                             {item.isActive ? "Nonaktifkan" : "Aktifkan"}
                           </Button>
+                          <Button
+                            variant="danger"
+                            disabled={isMe || pendingId === item.id}
+                            title={isMe ? "Tidak bisa menghapus akun sendiri" : "Hapus akun permanen"}
+                            onClick={() => setDialog({ kind: "delete", user: item })}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                            Hapus
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -360,6 +443,23 @@ function UsersManager() {
             onCancel={() => setDialog(null)}
             onDone={() => {
               setNotice(`Password @${dialog.user.username} berhasil direset.`);
+              setDialog(null);
+            }}
+          />
+        ) : null}
+      </Dialog>
+
+      <Dialog open={dialog?.kind === "delete"} title="Hapus akun" onClose={() => setDialog(null)}>
+        {dialog?.kind === "delete" ? (
+          <DeleteUserForm
+            key={dialog.user.id}
+            user={dialog.user}
+            onCancel={() => setDialog(null)}
+            onDone={() => {
+              const removed = dialog.user;
+              setUsers((current) => current.filter((item) => item.id !== removed.id));
+              setNotice(`Akun @${removed.username} berhasil dihapus.`);
+              setError(null);
               setDialog(null);
             }}
           />
