@@ -146,4 +146,5 @@ continuous aggregate `readings_1min` yang disimpan permanen. Query raw dibatasi
 - [Inventaris Perhitungan](docs/calculations.md)
 - [Dokumen UAT](docs/UAT.md)
 - [Flowchart Program Utama](docs/program-flowchart.md)
+- [User Role Diagram & Matriks Hak Akses](docs/user-role.md)
 - [Backend](backend/README.md)
