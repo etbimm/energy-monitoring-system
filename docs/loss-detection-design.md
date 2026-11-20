@@ -1,6 +1,8 @@
 # Rancangan Fitur Deteksi Losses (Energy Balance)
 
-Status: **rancangan — belum diimplementasi.**
+Status: **Saran Pengembangan / Next Phase — rancangan, belum diimplementasi.**
+Fitur ini belum termasuk cakupan aplikasi saat ini; topologi dan ambang masih
+harus diverifikasi sebelum implementasi.
 Topologi pada dokumen ini masih **asumsi** dan wajib dicocokkan dengan single
 line diagram (SLD) pabrik sebelum diimplementasi (lihat [§9](#9-pertanyaan-terbuka)).
 

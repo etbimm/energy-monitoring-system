@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 
 from sqlalchemy import Double, Integer, case, column, func, literal_column, select, table, true
 from sqlalchemy.types import DateTime
@@ -34,6 +34,30 @@ READINGS_1MIN = table(
             "energy_active", "energy_reactive", "energy_apparent",
         )
     ),
+)
+
+READINGS_15MIN = table(
+    "readings_15min",
+    column("device_id", Integer),
+    column("bucket", DateTime(timezone=True)),
+    *(
+        column(name, Double)
+        for name in (
+            "voltage", "current", "power", "apparent_power", "reactive_power",
+            "frequency", "power_factor", "energy_active", "energy_reactive",
+            "energy_apparent",
+        )
+    ),
+)
+
+DAILY_ENERGY = table(
+    "daily_energy",
+    column("device_id", Integer),
+    column("day", DateTime(timezone=True)),
+    column("energy_kwh", Double),
+    column("energy_kvarh", Double),
+    column("peak_power", Double),
+    column("avg_pf", Double),
 )
 
 
@@ -214,10 +238,27 @@ async def get_energy_totals(
 
     Delta dihitung per meter (`last - first`) baru dijumlahkan, sehingga meter
     yang offline di awal/akhir rentang tidak merusak total. Delta negatif
-    (counter reset / meter diganti) diabaikan. Sumber data: continuous
-    aggregate `readings_1min` (nilai counter terakhir tiap menit), sehingga
-    tetap tersedia setelah data mentah dihapus retention policy.
+    (counter reset / meter diganti) diabaikan. Rentang pendek memakai
+    `readings_1min`; rentang tanggal panjang yang sejajar tengah malam WIB
+    memakai `daily_energy` untuk hari lengkap terbaru dan `readings_15min`
+    untuk tepi rentang serta energi semu.
     """
+    settings = get_settings()
+    local_start = start.astimezone(settings.tz)
+    local_end = end.astimezone(settings.tz)
+    day_aligned = (
+        local_start.time().replace(tzinfo=None) == time.min
+        and local_end.time().replace(tzinfo=None) == time.min
+    )
+    if day_aligned and end - start >= timedelta(days=7):
+        return await _get_long_range_energy_totals(
+            session,
+            start=start,
+            end=end,
+            device_code=device_code,
+            role=role,
+        )
+
     m = READINGS_1MIN
     per_device = (
         select(
@@ -245,6 +286,114 @@ async def get_energy_totals(
         energy_reactive=positive_sum("reactive"),
         energy_apparent=positive_sum("apparent"),
         devices=len(rows),
+    )
+
+
+async def _counter_deltas_15min(
+    session: AsyncSession,
+    *,
+    start: datetime,
+    end: datetime,
+    device_filter,
+):
+    m = READINGS_15MIN
+    stmt = (
+        select(
+            m.c.device_id,
+            (func.last(m.c.energy_active, m.c.bucket) - func.first(m.c.energy_active, m.c.bucket)).label("active"),
+            (func.last(m.c.energy_reactive, m.c.bucket) - func.first(m.c.energy_reactive, m.c.bucket)).label("reactive"),
+            (func.last(m.c.energy_apparent, m.c.bucket) - func.first(m.c.energy_apparent, m.c.bucket)).label("apparent"),
+        )
+        .join(Device, Device.id == m.c.device_id)
+        .where(m.c.bucket >= start, m.c.bucket < end, device_filter)
+        .group_by(m.c.device_id)
+    )
+    return (await session.execute(stmt)).all()
+
+
+async def _get_long_range_energy_totals(
+    session: AsyncSession,
+    *,
+    start: datetime,
+    end: datetime,
+    device_code: str | None,
+    role: str | None,
+) -> EnergyTotalsOut:
+    """Use daily rollups for complete recent days and 15-minute edges."""
+    device_filter = _device_filter(device_code, role)
+    today_start = local_day_start()
+    daily_end = min(end, today_start)
+    daily_start = max(start, local_day_start(datetime.now(timezone.utc) - timedelta(days=29)))
+    if daily_start > daily_end:
+        daily_start = daily_end
+
+    by_device: dict[int, dict[str, float]] = {}
+
+    def add_values(row, source_names: tuple[tuple[str, str], ...]) -> None:
+        values = by_device.setdefault(row.device_id, {})
+        for source_name, target_name in source_names:
+            value = getattr(row, source_name)
+            if value is not None:
+                values[target_name] = values.get(target_name, 0.0) + float(value)
+
+    if daily_start < daily_end:
+        daily = DAILY_ENERGY
+        daily_stmt = (
+            select(
+                daily.c.device_id,
+                func.sum(daily.c.energy_kwh).label("active"),
+                func.sum(daily.c.energy_kvarh).label("reactive"),
+            )
+            .join(Device, Device.id == daily.c.device_id)
+            .where(
+                daily.c.day >= daily_start,
+                daily.c.day < daily_end,
+                device_filter,
+            )
+            .group_by(daily.c.device_id)
+        )
+        for row in (await session.execute(daily_stmt)).all():
+            add_values(row, (("active", "active"), ("reactive", "reactive")))
+
+        edge_ranges = []
+        if start < daily_start:
+            edge_ranges.append((start, daily_start))
+        if daily_end < end:
+            edge_ranges.append((daily_end, end))
+    else:
+        edge_ranges = [(start, end)]
+
+    for edge_start, edge_end in edge_ranges:
+        for row in await _counter_deltas_15min(
+            session,
+            start=edge_start,
+            end=edge_end,
+            device_filter=device_filter,
+        ):
+            add_values(row, (("active", "active"), ("reactive", "reactive")))
+
+    # daily_energy does not include apparent energy, so use the permanent
+    # 15-minute counter aggregate for that metric across the complete range.
+    for row in await _counter_deltas_15min(
+        session,
+        start=start,
+        end=end,
+        device_filter=device_filter,
+    ):
+        add_values(row, (("apparent", "apparent"),))
+
+    def positive_sum(name: str) -> float:
+        return sum(
+            values[name]
+            for values in by_device.values()
+            if name in values and values[name] > 0
+        )
+
+    return EnergyTotalsOut(
+        energy_active=positive_sum("active"),
+        energy_reactive=positive_sum("reactive"),
+        energy_apparent=positive_sum("apparent"),
+        devices=len(by_device),
     )
 
 

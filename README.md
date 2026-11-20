@@ -114,7 +114,7 @@ Untuk data dummy yang mengalir lewat backend, gunakan `ACQUISITION_MODE=simulato
 
 File di `database/init/` hanya dijalankan saat volume database pertama kali
 dibuat. Untuk database yang sudah berjalan, jalankan file di
-`database/migrations/` secara berurutan, misalnya:
+`database/migrations/` yang belum pernah diterapkan secara berurutan, misalnya:
 
 ```bash
 docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/001-daily-energy-wib.sql
@@ -125,10 +125,33 @@ docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/005-device-role
 docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/006-alarm-settings.sql
 ```
 
+Migrasi SQL `001`–`006` adalah riwayat legacy dan tidak boleh dijalankan ulang
+pada database yang sudah menerapkannya. Setelah skema database mencapai versi
+tersebut, aktifkan pencatatan Alembic (revisi baseline ini tidak mengubah skema):
+
+```bash
+docker compose exec backend alembic upgrade head
+```
+
+Migrasi skema baru selanjutnya dibuat dan ditinjau sebagai revisi Alembic.
+Untuk menghasilkan revisi dari dalam container sekaligus menyimpan berkasnya
+ke workspace:
+
+```bash
+docker compose run --rm -v ./backend:/app backend alembic revision --autogenerate -m "deskripsi perubahan"
+```
+
+Tinjau dan lengkapi revisi, terutama untuk objek TimescaleDB yang tidak selalu
+dapat dideteksi autogenerate, lalu terapkan dengan
+`docker compose exec backend alembic upgrade head`. Jangan mengubah urutan atau
+menghapus revisi yang sudah diterapkan.
+
 Kebijakan penyimpanan: data mentah (`readings`, `phase_readings`) dikompresi
 setelah 7 hari dan dihapus setelah 90 hari. Grafik dan total energi dibaca dari
-continuous aggregate `readings_1min` yang disimpan permanen. Query raw dibatasi
-7 hari dan setiap respons time series maksimal 20.000 titik.
+continuous aggregate yang disimpan permanen. Rentang energi pendek menggunakan
+`readings_1min`; rentang tanggal panjang menggunakan `daily_energy` untuk hari
+lengkap terbaru dan `readings_15min` untuk tepi rentang / energi semu. Query raw
+dibatasi 7 hari dan setiap respons time series maksimal 20.000 titik.
 
 ## Status
 

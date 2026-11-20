@@ -1,0 +1,5 @@
+Alembic revisions live in `versions/`. The initial revision is an empty marker
+for the schema historically managed by `database/migrations/` and
+`database/init/`; subsequent schema changes should be added as Alembic
+revisions. TimescaleDB continuous aggregates and policies require manual review
+because autogenerate does not model them.

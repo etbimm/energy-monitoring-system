@@ -16,6 +16,7 @@ from app.services.queries import (
     _point,
     _severity_rank,
     get_summary,
+    get_energy_totals,
     list_alarms,
     local_day_start,
     validate_range,
@@ -161,3 +162,60 @@ async def test_alarm_list_applies_server_side_limit_and_offset():
     )
 
     assert "LIMIT 21 OFFSET 40" in sql
+
+
+@pytest.mark.asyncio
+async def test_long_aligned_energy_range_uses_daily_and_15_minute_aggregates():
+    class CaptureSession:
+        def __init__(self, batches):
+            self.batches = iter(batches)
+            self.statements = []
+
+        async def execute(self, statement):
+            self.statements.append(statement)
+            return _Rows(next(self.batches))
+
+    today = local_day_start()
+    session = CaptureSession(
+        [
+            [SimpleNamespace(device_id=1, active=8.0, reactive=2.0)],
+            [SimpleNamespace(device_id=1, active=1.0, reactive=0.25, apparent=1.2)],
+            [SimpleNamespace(device_id=1, active=9.0, reactive=2.25, apparent=10.0)],
+        ]
+    )
+
+    totals = await get_energy_totals(
+        session,
+        start=today - timedelta(days=8),
+        end=today + timedelta(days=1),
+    )
+
+    sql = [
+        str(stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+        for stmt in session.statements
+    ]
+    assert "daily_energy" in sql[0]
+    assert all("readings_15min" in statement for statement in sql[1:])
+    assert totals.energy_active == 9.0
+    assert totals.energy_reactive == 2.25
+    assert totals.energy_apparent == 10.0
+    assert totals.devices == 1
+
+
+@pytest.mark.asyncio
+async def test_short_energy_range_keeps_minute_aggregate():
+    class CaptureSession:
+        async def execute(self, statement):
+            self.statement = statement
+            return _Rows([SimpleNamespace(active=3.0, reactive=1.0, apparent=4.0)])
+
+    session = CaptureSession()
+    today = local_day_start()
+    await get_energy_totals(session, start=today, end=today + timedelta(hours=2))
+
+    sql = str(
+        session.statement.compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    assert "readings_1min" in sql
