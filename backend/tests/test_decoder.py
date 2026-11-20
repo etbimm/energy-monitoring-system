@@ -17,37 +17,36 @@ def test_read_int32_le():
 
 
 def test_elite440_sparse_registers():
-    words = [0] * 50
-    words[12] = 0x0000
-    words[13] = 0x42ED
-    words[40] = 1234
-    words[41] = 0
+    words = [0] * 102
+    words[147 - 99] = 0x42ED
+    words[147 - 99 + 1] = 0x0000
+    words[199 - 99] = 0x449A
+    words[199 - 99 + 1] = 0x4000
     decoded = decode(PROFILES["CEWE Elite440"], words)
-    assert decoded["P aktif"]["value"] == 118.5
-    assert decoded["P aktif"]["unit"] == "kW"
+    assert decoded["P total"]["value"] == 118.5
+    assert decoded["P total"]["unit"] == "kW"
     assert decoded["Active energy import"]["value"] == 1234
 
 
 def test_elite440_skips_unread_registers():
-    words = [0] * 14
+    words = [0] * 50
     decoded = decode(PROFILES["CEWE Elite440"], words)
-    assert "P aktif" in decoded
+    assert "P total" in decoded
     assert "Active energy import" not in decoded
 
 
 def test_amc96_scaled_integers():
-    words = [
-        4000, 3990, 3980,
-        1824, 1131, 804,
-        1186, 430, 1262,
-        94,
-        500,
-    ]
-    decoded = decode(PROFILES["ACREL AMC96"], words)
-    assert decoded["U L1"]["value"] == 400
-    assert decoded["I L1"]["value"] == 18.24
-    assert decoded["P aktif"]["value"] == 118.6
-    assert decoded["PF"]["value"] == 0.94
+    expanded = [0] * 26
+    expanded[:3] = [4000, 3990, 3980]
+    expanded[6:9] = [1824, 1131, 804]
+    expanded[12] = 1186
+    expanded[20] = 940
+    expanded[25] = 5000
+    decoded = decode(PROFILES["ACREL AMC96"], expanded, base_addr=0x0100)
+    assert decoded["U L1-N"]["value"] == 400
+    assert decoded["I L1"]["value"] == 1.824
+    assert decoded["P total"]["value"] == 1.186
+    assert decoded["PF total"]["value"] == 0.94
     assert decoded["Frekuensi"]["value"] == 50
 
 
@@ -62,11 +61,12 @@ def test_dmg510_int32_and_pf():
     assert decoded["PF"]["value"] == 0.94
 
 
-def test_em220_uint32_scale():
-    words = [0] * 30
-    words[6] = 26500
+def test_em220_float32_scale_and_word_order():
+    words = [0] * 54
+    words[52] = 0x46CF
+    words[53] = 0x0800
     decoded = decode(PROFILES["WEIDMULLER EM220"], words)
-    assert decoded["P aktif"]["value"] == 26.5
+    assert decoded["P total"]["value"] == 26.5
 
 
 def test_em220_thd_i_big_endian_registers():
@@ -84,14 +84,14 @@ def test_registry_integrity():
         assert model in PROFILES
     with_kvah = [p for p in PROFILES.values() if "kVAh" in p.available]
     assert len(with_kvah) == 1
-    assert with_kvah[0].model == "SIEMENS PAC3220"
+    assert with_kvah[0].model == "WEIDMULLER EM220"
     with_thd = [p for p in PROFILES.values() if "THD-i" in p.available]
     assert len(with_thd) == len(PROFILES)
-    assert "THD-u" not in PROFILES["WEIDMULLER EM220"].available
+    assert "THD-u" in PROFILES["WEIDMULLER EM220"].available
     assert PROFILES["WEIDMULLER EM220"].function_code == "FC04"
-    assert PROFILES["WEIDMULLER EM220"].word_order == "little"
+    assert PROFILES["WEIDMULLER EM220"].word_order == "big"
     assert {
-        reg.word_order
+        reg.word_order or PROFILES["WEIDMULLER EM220"].word_order
         for reg in PROFILES["WEIDMULLER EM220"].registers
         if reg.key.startswith("thd_current_")
     } == {"big"}
@@ -111,19 +111,19 @@ def test_register_layout():
             assert reg.count == need
             if "energy" in reg.label.lower():
                 assert reg.count == 2
-                assert reg.type in {"uint32", "int32"}
+                assert reg.type in {"uint32", "int32", "float32"}
 
 
 def test_register_blocks_split_gaps():
     blocks = register_blocks(PROFILES["CEWE Elite440"], max_gap=4)
     addresses = [start for start, _ in blocks]
-    assert 0 in addresses
-    assert 40 in addresses
+    assert 99 in addresses
+    assert 199 in addresses
 
 
 def test_capabilities_follow_profile_registers():
     from app.acquisition.profiles import register_capabilities
 
-    assert register_capabilities("WEIDMULLER EM220") == {"thdCurrent": True, "thdVoltage": False}
+    assert register_capabilities("WEIDMULLER EM220") == {"thdCurrent": True, "thdVoltage": True}
     assert register_capabilities("SIEMENS PAC3220") == {"thdCurrent": True, "thdVoltage": True}
     assert register_capabilities("MODEL TIDAK DIKENAL") == {}
