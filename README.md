@@ -54,8 +54,11 @@ Semua halaman dashboard dan endpoint data wajib login. Akun dibuat oleh admin
 | Audit log | ❌ | ✅ |
 | Ganti password sendiri | ✅ | ✅ |
 
-1. Isi `JWT_SECRET` di `.env` (string acak >= 32 karakter), lalu
-   `docker compose up -d --build backend`.
+1. Isi `JWT_SECRET` di `.env` (string acak >= 32 karakter). `docker compose`
+   menjalankan backend dengan `ENVIRONMENT=production`, sehingga backend akan
+   **gagal start** bila `JWT_SECRET` kosong atau kurang dari 32 karakter. Untuk
+   pengembangan lokal tanpa secret, set `ENVIRONMENT=development`.
+   Lalu jalankan `docker compose up -d --build backend`.
 2. Buat admin pertama (password diketik di terminal, tidak tersimpan di repo):
 
    ```bash
@@ -119,6 +122,7 @@ docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/002-notificatio
 docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/003-aggregates-compression-retention.sql
 docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/004-auth-device-management.sql
 docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/005-device-role-transport-lainnya.sql
+docker exec -i ems-db-1 psql -U ems -d ems < database/migrations/006-alarm-settings.sql
 ```
 
 Kebijakan penyimpanan: data mentah (`readings`, `phase_readings`) dikompresi

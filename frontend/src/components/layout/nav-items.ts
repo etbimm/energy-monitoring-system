@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Server,
   Siren,
+  SlidersHorizontal,
   Users,
   Waves,
   type LucideIcon,
@@ -30,5 +31,6 @@ export const NAV_ITEMS: NavItem[] = [
 export const ADMIN_NAV_ITEMS: NavItem[] = [
   { href: "/admin/users", label: "Kelola Akun", icon: Users },
   { href: "/admin/devices", label: "Kelola Device", icon: Server },
+  { href: "/admin/thresholds", label: "Ambang Alarm", icon: SlidersHorizontal },
   { href: "/admin/audit", label: "Audit Log", icon: History },
 ];

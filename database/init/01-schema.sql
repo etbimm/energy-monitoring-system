@@ -116,6 +116,21 @@ CREATE TABLE IF NOT EXISTS notification_state (
   active_since  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Ambang alarm yang dapat diubah admin lewat dashboard. Satu baris (id=1).
+-- Nilai bawaan sama dengan ambang yang sebelumnya hardcoded di alarms.py.
+CREATE TABLE IF NOT EXISTS alarm_settings (
+  id          INTEGER PRIMARY KEY,
+  thresholds  JSONB NOT NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO alarm_settings (id, thresholds)
+VALUES (
+  1,
+  '{"voltage_ll_warning_low":385.0,"voltage_ll_warning_high":415.0,"voltage_ll_critical_low":350.0,"voltage_ll_critical_high":440.0,"power_factor_warning":0.90,"power_factor_critical":0.85,"frequency_warning":0.5,"frequency_critical":1.0,"thd_current_warning":5.0,"thd_current_critical":8.0,"unbalance_voltage_warning":2.0,"unbalance_voltage_critical":5.0,"load_warning":0.80,"load_critical":0.95}'::jsonb
+)
+ON CONFLICT (id) DO NOTHING;
+
 -- Akun pengguna dashboard (dibuat oleh admin, tidak ada registrasi publik).
 -- token_version dinaikkan saat password direset, role diubah, atau akun
 -- dinonaktifkan, sehingga sesi (JWT) lama langsung tidak berlaku.

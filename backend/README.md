@@ -65,6 +65,11 @@ Untuk poll meter sungguhan:
 ACQUISITION_MODE=modbus docker compose up --build
 ```
 
+Backend membaca `ENVIRONMENT` (default `development`). Di `production`,
+`JWT_SECRET` (minimal 32 karakter) wajib diisi; backend menolak start bila
+kosong. `docker compose` di root repo menjalankan backend dengan
+`ENVIRONMENT=production`, jadi isi `JWT_SECRET` di `.env` terlebih dahulu.
+
 Sesuaikan `modbus_host` / `modbus_address` di tabel `devices`.
 
 Histori simulasi 30 hari (interval 15 menit, termasuk per fasa) **tidak lagi

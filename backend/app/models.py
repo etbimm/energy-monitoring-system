@@ -89,6 +89,18 @@ class Alarm(Base):
     device = relationship("Device", back_populates="alarms")
 
 
+class AlarmSettings(Base):
+    """Ambang alarm yang bisa diubah lewat halaman admin."""
+
+    __tablename__ = "alarm_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    thresholds: Mapped[dict] = mapped_column(JSONB, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class User(Base):
     __tablename__ = "users"
 

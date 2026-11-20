@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,6 +8,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
 
     database_url: str = "postgresql+asyncpg://ems:ems@localhost:5432/ems"
+
+    # Mode aplikasi: "development" atau "production". Di production, backend
+    # menolak start bila JWT_SECRET belum diisi (lihat validator di bawah).
+    environment: str = "development"
 
     mqtt_host: str = "localhost"
     mqtt_port: int = 1883
@@ -77,6 +81,32 @@ class Settings(BaseSettings):
         if value is not None and len(value) < 32:
             raise ValueError("JWT_SECRET minimal 32 karakter")
         return value
+
+    @field_validator("environment")
+    @classmethod
+    def normalize_environment(cls, value: str) -> str:
+        value = value.strip().lower()
+        if not value:
+            raise ValueError("ENVIRONMENT tidak boleh kosong")
+        if value not in {"development", "dev", "production", "prod"}:
+            raise ValueError("ENVIRONMENT harus 'development' atau 'production'")
+        return value
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment in {"production", "prod"}
+
+    @model_validator(mode="after")
+    def require_jwt_secret_in_production(self) -> "Settings":
+        # Di production, secret acak sementara tidak boleh dipakai: setiap
+        # restart akan melogout semua user dan token tidak bisa diverifikasi
+        # lintas replika. Gagalkan start agar kesalahan konfigurasi cepat terlihat.
+        if self.is_production and not self.jwt_secret:
+            raise ValueError(
+                "JWT_SECRET wajib diisi (minimal 32 karakter) saat "
+                "ENVIRONMENT=production. Isi nilainya di .env sebelum menjalankan backend."
+            )
+        return self
 
     @field_validator("jwt_expire_minutes")
     @classmethod

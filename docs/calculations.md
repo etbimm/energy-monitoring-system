@@ -103,20 +103,45 @@ bukan menghitung delta dari histori telemetry.
 
 ### Ambang backend
 
-Implementasi di [`backend/app/services/alarms.py`](../backend/app/services/alarms.py):
+Implementasi di [`backend/app/services/alarms.py`](../backend/app/services/alarms.py).
+Ambang divalidasi oleh `AlarmThresholds` di
+[`backend/app/schemas.py`](../backend/app/schemas.py), disimpan pada tabel
+`alarm_settings`, dan dapat diubah admin pada
+[`frontend/src/app/admin/thresholds/page.tsx`](../frontend/src/app/admin/thresholds/page.tsx)
+melalui `GET/PUT /api/admin/alarm-thresholds`. Nilai yang disimpan dipakai
+mulai dari siklus evaluasi telemetry berikutnya; perubahan dicatat di audit
+log. Nilai bawaan tetap:
 
 | Metrik | Rumus / kondisi warning | Kondisi critical |
 |---|---|---|
-| PF | `PF < 0.90` | `PF < 0.85` |
-| Tegangan L-L (antar-fasa) | `0 < V < 385` atau `V > 415` | `0 < V < 350` atau `V > 440` |
-| Tegangan L-N (fasa-netral) | `0 < V < 222.3` atau `V > 239.6` | `0 < V < 202.1` atau `V > 254.0` |
-| Deviasi frekuensi | `abs(f - 50 Hz) > 0.5 Hz` | `abs(f - 50 Hz) > 1.0 Hz` |
-| THD arus | `THD-I >= 5%` | `THD-I >= 8%` |
-| Unbalance tegangan | `unbalance V > 2%` | `unbalance V > 5%` |
-| Beban terhadap kapasitas | `P / rated_power_kW > 0.80` | `P / rated_power_kW > 0.95` |
+| Metrik | Nilai bawaan warning | Nilai bawaan critical |
+|---|---:|---:|
+| Power factor | `0.90` | `0.85` |
+| Tegangan L-L (antar-fasa), rentang bawah/atas | `385 / 415 V` | `350 / 440 V` |
+| Deviasi frekuensi dari 50 Hz | `0.5 Hz` | `1.0 Hz` |
+| THD arus | `5%` | `8%` |
+| Unbalance tegangan | `2%` | `5%` |
+| Beban terhadap daya rating | `0.80` | `0.95` |
 
-Beban dihitung hanya bila kapasitas terpasang dan P bernilai truthy. Alarm
-frekuensi dan tegangan juga memerlukan input lebih dari nol.
+Saat evaluasi, kondisi PF adalah `PF < kritis`, lalu `PF < warning`;
+tegangan L-L adalah `V < batas_bawah` atau `V > batas_atas`; deviasi
+frekuensi adalah `abs(f - 50 Hz) > batas`; THD-I memakai `>=`; unbalance
+tegangan dan beban memakai `>`. L-N memakai batas L-L dibagi `sqrt(3)` dan
+dibulatkan satu desimal. Untuk tegangan dipilih input terukur dengan prioritas
+`voltage_ln`, `voltage_ll`, lalu `voltage` (dianggap L-L).
+
+Tegangan dan frekuensi hanya dievaluasi jika nilainya lebih dari nol. PF, THD
+arus, dan unbalance dievaluasi bila input tidak `null`. Beban adalah
+`P / rated_power_kW` dan hanya dievaluasi bila daya rating dan P bernilai
+truthy. Validasi ambang menuntut batas kritis tegangan melingkupi rentang
+warning; `0 < PF kritis <= PF warning <= 1`; batas frekuensi positif dan
+critical lebih besar dari warning; THD/unbalance nonnegatif dengan critical
+lebih besar dari warning; serta `0 < beban warning < beban critical <= 1`.
+
+Aturan ini berlaku untuk alarm telemetry backend, baik data meter maupun
+simulator; alarm `offline` dikelola terpisah. Nilai batas yang sama belum
+mengubah indikator severity pada halaman Power Quality, yang tetap memakai
+ambang frontend-nya sendiri.
 
 Batas L-N = batas L-L dibagi √3 (dibulatkan 1 desimal). Alarm tegangan memakai
 tegangan yang benar-benar diukur meter: `voltage_ln` bila ada, lalu
@@ -148,6 +173,11 @@ untuk telemetry produksi maupun simulator (alarm `offline` dikelola terpisah):
 
 ### Status, threshold UI, dan timeout
 
+- Form ambang alarm mengubah nilai beban dari persen UI menjadi fraksi untuk
+  API (`80% -> 0.80`). Batas tampilan L-N dihitung dari batas L-L dibagi
+  `sqrt(3)` dan dibulatkan satu desimal; penghitungan alarm backend mengikuti
+  aturan yang sama. Implementasi UI ada di
+  [`frontend/src/app/admin/thresholds/page.tsx`](../frontend/src/app/admin/thresholds/page.tsx).
 - Deviasi frekuensi yang ditampilkan UI: `abs(f - 50 Hz)`. Status warning
   dimulai pada `>= 0.5 Hz`, critical pada `>= 1.0 Hz`; aturan UI berada di
   [`frontend/src/lib/meter-models.ts`](../frontend/src/lib/meter-models.ts).

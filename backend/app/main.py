@@ -23,6 +23,7 @@ from app.services.error_reporting import error_reporter, report_error, resolve_e
 from app.services.ingest import ingest_telemetry
 from app.services.mqtt import mqtt_subscriber
 from app.services.realtime import hub
+from app.services.thresholds import refresh_cached_thresholds
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("ems.api")
@@ -73,6 +74,12 @@ async def offline_watcher() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # Muat ambang alarm dari database (bila migrasi belum dijalankan, pakai bawaan).
+    try:
+        async with SessionLocal() as session:
+            await refresh_cached_thresholds(session)
+    except Exception as exc:
+        log.warning("Gagal memuat ambang alarm dari database: %s", exc)
     mqtt_task = asyncio.create_task(mqtt_subscriber(), name="mqtt-subscriber")
     offline_task = asyncio.create_task(offline_watcher(), name="offline-watcher")
     log.info("EMS API siap")

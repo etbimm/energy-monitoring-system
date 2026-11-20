@@ -17,6 +17,7 @@ from app.acquisition.scheduling import group_by_gateway, next_deadline
 from app.acquisition.simulator import prime_counter, simulate_telemetry
 from app.config import get_settings
 from app.services.error_reporting import report_error, resolve_error
+from app.services.reconnect import backoff_delay
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("ems.acquisition")
@@ -201,6 +202,7 @@ async def run() -> None:
     settings = get_settings()
     log.info("Acquisition start mode=%s interval=%ss", settings.acquisition_mode, settings.poll_interval)
     poller = Poller()
+    mqtt_attempt = 0
 
     while True:
         try:
@@ -217,6 +219,8 @@ async def run() -> None:
                 password=settings.mqtt_password,
             ) as mqtt:
                 await resolve_error("mqtt:acquisition", "Koneksi MQTT acquisition kembali normal.")
+                # Koneksi berhasil: backoff direset.
+                mqtt_attempt = 0
                 loop = asyncio.get_running_loop()
                 started = loop.time()
                 while True:
@@ -231,10 +235,12 @@ async def run() -> None:
                         )
                     await asyncio.sleep(max(0.0, started - loop.time()))
         except aiomqtt.MqttError as exc:
+            mqtt_attempt += 1
             await report_error("mqtt:acquisition", "Koneksi MQTT acquisition terputus.", exc)
-            log.warning("MQTT terputus, reconnect 5 detik")
+            delay = backoff_delay(mqtt_attempt)
+            log.warning("MQTT terputus, reconnect %.0f detik (percobaan %d)", delay, mqtt_attempt)
             poller.close()
-            await asyncio.sleep(5)
+            await asyncio.sleep(delay)
 
 
 if __name__ == "__main__":

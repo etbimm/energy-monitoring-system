@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.schemas import DeviceOut
-from app.services.queries import list_devices
+from app.services.queries import get_device_by_code, list_devices
 
 router = APIRouter(prefix="/api", tags=["devices"])
 
@@ -15,11 +15,10 @@ async def get_devices(session: AsyncSession = Depends(get_session)) -> list[Devi
 
 @router.get("/devices/{device_code}", response_model=DeviceOut)
 async def get_device(device_code: str, session: AsyncSession = Depends(get_session)) -> DeviceOut:
-    devices = await list_devices(session)
-    for device in devices:
-        if device.id == device_code:
-            return device
-    raise HTTPException(status_code=404, detail="Device tidak ditemukan")
+    device = await get_device_by_code(session, device_code)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device tidak ditemukan")
+    return device
 
 
 @router.get("/devices/{device_code}/latest", response_model=DeviceOut)

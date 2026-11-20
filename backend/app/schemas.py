@@ -3,7 +3,7 @@ import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -90,6 +90,67 @@ class SummaryOut(CamelModel):
     warning: int
     offline: int
     total: int
+
+
+class AlarmThresholds(CamelModel):
+    """Ambang alarm yang dapat diubah admin dan disimpan di database.
+
+    Nilai bawaan sama dengan ambang sebelumnya yang hardcoded. Tegangan
+    fasa-netral (L-N) diturunkan dari batas L-L, seperti perilaku lama.
+    """
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        from_attributes=True,
+        frozen=True,
+    )
+
+    # Tegangan antar-fasa (L-L) dalam volt.
+    voltage_ll_warning_low: float = 385.0
+    voltage_ll_warning_high: float = 415.0
+    voltage_ll_critical_low: float = 350.0
+    voltage_ll_critical_high: float = 440.0
+
+    power_factor_warning: float = 0.90
+    power_factor_critical: float = 0.85
+
+    # Deviasi dari 50 Hz.
+    frequency_warning: float = 0.5
+    frequency_critical: float = 1.0
+
+    thd_current_warning: float = 5.0
+    thd_current_critical: float = 8.0
+
+    unbalance_voltage_warning: float = 2.0
+    unbalance_voltage_critical: float = 5.0
+
+    # Fraksi daya rating meter (0.80 = 80%).
+    load_warning: float = 0.80
+    load_critical: float = 0.95
+
+    @model_validator(mode="after")
+    def valid_ranges(self) -> "AlarmThresholds":
+        if not (
+            self.voltage_ll_critical_low
+            < self.voltage_ll_warning_low
+            <= self.voltage_ll_warning_high
+            < self.voltage_ll_critical_high
+        ):
+            raise ValueError(
+                "Batas tegangan L-L harus: kritis bawah < warning bawah <= warning atas < kritis atas"
+            )
+        if not (0 < self.power_factor_critical <= self.power_factor_warning <= 1):
+            raise ValueError("Power factor harus: 0 < kritis <= warning <= 1")
+        if not (0 < self.frequency_warning < self.frequency_critical):
+            raise ValueError("Deviasi frekuensi kritis harus lebih besar dari warning")
+        if not (0 <= self.thd_current_warning < self.thd_current_critical):
+            raise ValueError("THD arus kritis harus lebih besar dari warning")
+        if not (0 <= self.unbalance_voltage_warning < self.unbalance_voltage_critical):
+            raise ValueError("Unbalance tegangan kritis harus lebih besar dari warning")
+        if not (0 < self.load_warning < self.load_critical <= 1):
+            raise ValueError("Beban harus: 0 < warning < kritis <= 1")
+        return self
 
 
 class EnergyTotalsOut(CamelModel):

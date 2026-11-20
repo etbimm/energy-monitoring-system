@@ -21,6 +21,7 @@ const ACTION_LABEL: Record<string, string> = {
   "device.update": "Ubah device",
   "device.activate": "Aktifkan device",
   "device.deactivate": "Nonaktifkan device",
+  "alarm_thresholds.update": "Ubah ambang alarm",
 };
 
 function describe(detail: Record<string, unknown>): string {

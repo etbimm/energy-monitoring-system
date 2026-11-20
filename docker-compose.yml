@@ -57,6 +57,7 @@ services:
     ports:
       - "${BACKEND_PORT:-4000}:4000"
     environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ems}:${POSTGRES_PASSWORD:-ems}@db:5432/${POSTGRES_DB:-ems}
       MQTT_HOST: mqtt
       MQTT_PORT: 1883

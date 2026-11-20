@@ -8,17 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models import Alarm, Device
+from app.schemas import AlarmThresholds
 from app.services.realtime import hub
+from app.services.thresholds import DEFAULT_ALARM_THRESHOLDS, current_thresholds
 
 NOMINAL_HZ = 50.0
 SQRT3 = 3 ** 0.5
-
-# Batas tegangan antar-fasa (L-L, nominal 400 V).
-VOLTAGE_LL_WARNING = (385.0, 415.0)
-VOLTAGE_LL_CRITICAL = (350.0, 440.0)
-# Batas fasa-netral (L-N, nominal 230 V) = batas L-L dibagi sqrt(3).
-VOLTAGE_LN_WARNING = tuple(round(v / SQRT3, 1) for v in VOLTAGE_LL_WARNING)
-VOLTAGE_LN_CRITICAL = tuple(round(v / SQRT3, 1) for v in VOLTAGE_LL_CRITICAL)
 
 # Deadband (hysteresis): alarm yang sudah aktif baru dianggap normal bila nilai
 # kembali melewati ambang ditambah margin ini, agar tidak "flapping".
@@ -36,41 +31,60 @@ DEADBAND = {
 _EXTERNAL_TYPES = {"offline"}
 
 
-def _voltage_basis(payload: dict) -> tuple[float, str, tuple[float, float], tuple[float, float]] | None:
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _voltage_basis(
+    payload: dict, thresholds: AlarmThresholds
+) -> tuple[float, str, tuple[float, float], tuple[float, float]] | None:
     """Pilih tegangan yang benar-benar diukur meter beserta batasnya.
 
     Prioritas: L-N terukur, lalu L-L terukur, lalu `voltage` (selalu L-L).
+    Batas L-N diturunkan dari batas L-L, seperti perhitungan lama.
     """
+    ln_warning = (
+        round(thresholds.voltage_ll_warning_low / SQRT3, 1),
+        round(thresholds.voltage_ll_warning_high / SQRT3, 1),
+    )
+    ln_critical = (
+        round(thresholds.voltage_ll_critical_low / SQRT3, 1),
+        round(thresholds.voltage_ll_critical_high / SQRT3, 1),
+    )
     ln = payload.get("voltage_ln")
     if ln is not None and ln > 0:
-        return ln, "L-N", VOLTAGE_LN_WARNING, VOLTAGE_LN_CRITICAL
+        return ln, "L-N", ln_warning, ln_critical
     ll = payload.get("voltage_ll")
     if ll is None:
         ll = payload.get("voltage")
     if ll is not None and ll > 0:
-        return ll, "L-L", VOLTAGE_LL_WARNING, VOLTAGE_LL_CRITICAL
+        return (
+            ll,
+            "L-L",
+            (thresholds.voltage_ll_warning_low, thresholds.voltage_ll_warning_high),
+            (thresholds.voltage_ll_critical_low, thresholds.voltage_ll_critical_high),
+        )
     return None
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def evaluate_conditions(
     payload: dict,
     device: Device,
     hysteresis: bool = False,
+    thresholds: AlarmThresholds | None = None,
 ) -> list[tuple[str, str, str]]:
     """Kembalikan list (alarm_type, severity, message) yang sedang aktif.
 
     `hysteresis=True` menggeser setiap ambang ke arah normal sebesar DEADBAND.
     Mode ini dipakai untuk alarm yang sudah aktif: alarm tetap dianggap abnormal
     sampai nilai benar-benar kembali normal (melewati ambang + margin).
+    `thresholds` boleh diisi saat tes; default memakai ambang bawaan.
     """
+    thresholds = DEFAULT_ALARM_THRESHOLDS if thresholds is None else thresholds
     m = 1.0 if hysteresis else 0.0
     found: list[tuple[str, str, str]] = []
     pf = payload.get("power_factor")
-    voltage_basis = _voltage_basis(payload)
+    voltage_basis = _voltage_basis(payload, thresholds)
     freq = payload.get("frequency")
     thd_i = payload.get("thd_current")
     unbalance_v = payload.get("unbalance_voltage")
@@ -78,9 +92,9 @@ def evaluate_conditions(
 
     if pf is not None:
         d = DEADBAND["power_factor"] * m
-        if pf < 0.85 + d:
+        if pf < thresholds.power_factor_critical + d:
             found.append(("power_factor", "critical", f"Power factor kritis ({pf:.3f})"))
-        elif pf < 0.90 + d:
+        elif pf < thresholds.power_factor_warning + d:
             found.append(("power_factor", "warning", f"Power factor rendah ({pf:.3f})"))
 
     if voltage_basis is not None:
@@ -94,32 +108,36 @@ def evaluate_conditions(
     if freq is not None and freq > 0:
         d = DEADBAND["frequency"] * m
         deviation = abs(freq - NOMINAL_HZ)
-        if deviation > 1.0 - d:
+        if deviation > thresholds.frequency_critical - d:
             found.append(("frequency", "critical", f"Deviasi frekuensi kritis ({freq:.2f} Hz)"))
-        elif deviation > 0.5 - d:
+        elif deviation > thresholds.frequency_warning - d:
             found.append(("frequency", "warning", f"Deviasi frekuensi ({freq:.2f} Hz)"))
 
     if thd_i is not None:
         d = DEADBAND["thd_current"] * m
-        if thd_i >= 8 - d:
+        if thd_i >= thresholds.thd_current_critical - d:
             found.append(("thd_current", "critical", f"THD arus kritis ({thd_i:.1f} %)"))
-        elif thd_i >= 5 - d:
+        elif thd_i >= thresholds.thd_current_warning - d:
             found.append(("thd_current", "warning", f"THD arus tinggi ({thd_i:.1f} %)"))
 
     if unbalance_v is not None:
         d = DEADBAND["unbalance_voltage"] * m
-        if unbalance_v > 5 - d:
+        if unbalance_v > thresholds.unbalance_voltage_critical - d:
             found.append(("unbalance_voltage", "critical", f"Unbalance tegangan kritis ({unbalance_v:.1f} %)"))
-        elif unbalance_v > 2 - d:
+        elif unbalance_v > thresholds.unbalance_voltage_warning - d:
             found.append(("unbalance_voltage", "warning", f"Unbalance tegangan ({unbalance_v:.1f} %)"))
 
     if device.rated_power_kw and power:
         d = DEADBAND["load"] * m
         load = power / device.rated_power_kw
-        if load > 0.95 - d:
-            found.append(("load", "critical", f"Beban > 95% kapasitas ({load:.0%})"))
-        elif load > 0.80 - d:
-            found.append(("load", "warning", f"Beban > 80% kapasitas ({load:.0%})"))
+        if load > thresholds.load_critical - d:
+            found.append(
+                ("load", "critical", f"Beban > {thresholds.load_critical:.0%} kapasitas ({load:.0%})")
+            )
+        elif load > thresholds.load_warning - d:
+            found.append(
+                ("load", "warning", f"Beban > {thresholds.load_warning:.0%} kapasitas ({load:.0%})")
+            )
 
     return found
 
@@ -166,8 +184,12 @@ async def apply_alarms(
     settings = get_settings()
     now = now or _now()
     state = state or tracker
-    strict = {t: (sev, msg) for t, sev, msg in evaluate_conditions(payload, device)}
-    relaxed = {t: (sev, msg) for t, sev, msg in evaluate_conditions(payload, device, hysteresis=True)}
+    thresholds = current_thresholds()
+    strict = {t: (sev, msg) for t, sev, msg in evaluate_conditions(payload, device, thresholds=thresholds)}
+    relaxed = {
+        t: (sev, msg)
+        for t, sev, msg in evaluate_conditions(payload, device, hysteresis=True, thresholds=thresholds)
+    }
     created: list[Alarm] = []
     notices: list[AlarmNotice] = []
 

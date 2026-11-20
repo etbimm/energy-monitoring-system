@@ -34,13 +34,17 @@ _generated_secret: str | None = None
 
 def jwt_secret() -> str:
     global _generated_secret
-    configured = get_settings().jwt_secret
-    if configured:
-        return configured
+    settings = get_settings()
+    if settings.jwt_secret:
+        return settings.jwt_secret
+    if settings.is_production:
+        # Settings sudah menolak start di production tanpa JWT_SECRET; ini
+        # pengaman tambahan bila objek Settings dibuat dengan cara lain.
+        raise RuntimeError("JWT_SECRET wajib diisi saat ENVIRONMENT=production")
     if _generated_secret is None:
         _generated_secret = secrets.token_urlsafe(48)
         log.warning(
-            "JWT_SECRET belum diisi: memakai secret acak sementara. "
+            "JWT_SECRET belum diisi: memakai secret acak sementara (mode development). "
             "Semua sesi login hilang setiap backend restart."
         )
     return _generated_secret

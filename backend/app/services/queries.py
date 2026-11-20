@@ -62,11 +62,11 @@ def _severity_rank():
     )
 
 
-async def list_devices(session: AsyncSession) -> list[DeviceOut]:
+def _latest_reading_lateral():
     # Pembacaan terakhir per meter: LATERAL ... ORDER BY time DESC LIMIT 1
     # memakai index (device_id, time DESC), bukan memindai seluruh hypertable
     # seperti DISTINCT ON.
-    latest = (
+    return (
         select(Reading)
         .where(Reading.device_id == Device.id)
         .order_by(Reading.time.desc())
@@ -74,26 +74,37 @@ async def list_devices(session: AsyncSession) -> list[DeviceOut]:
         .correlate(Device)
         .lateral("latest_reading")
     )
-    latest_reading = aliased(Reading, latest)
-    open_alarm = (
+
+
+def _open_alarm_subquery():
+    return (
         select(Alarm.device_id, _severity_rank().label("rank"))
         .where(Alarm.cleared_at.is_(None))
         .group_by(Alarm.device_id)
         .subquery()
     )
 
-    rows = (
-        await session.execute(
-            select(Device, latest_reading, open_alarm.c.rank)
-            .select_from(Device)
-            .outerjoin(latest_reading, true())
-            .outerjoin(open_alarm, Device.id == open_alarm.c.device_id)
-            # Meter nonaktif tidak tampil di monitoring (riwayatnya tetap ada).
-            .where(Device.is_active.is_(True))
-            .order_by(Device.id)
-        )
-    ).all()
 
+def _device_rows_stmt(device_code: str | None = None):
+    """Query device + pembacaan terakhir + rank alarm (opsional satu kode)."""
+    latest_reading = aliased(Reading, _latest_reading_lateral())
+    open_alarm = _open_alarm_subquery()
+
+    stmt = (
+        select(Device, latest_reading, open_alarm.c.rank)
+        .select_from(Device)
+        .outerjoin(latest_reading, true())
+        .outerjoin(open_alarm, Device.id == open_alarm.c.device_id)
+        # Meter nonaktif tidak tampil di monitoring (riwayatnya tetap ada).
+        .where(Device.is_active.is_(True))
+        .order_by(Device.id)
+    )
+    if device_code is not None:
+        stmt = stmt.where(Device.device_code == device_code)
+    return stmt
+
+
+async def _devices_out(session: AsyncSession, rows) -> list[DeviceOut]:
     device_ids = [device.id for device, *_ in rows]
     phases_by_device: dict[int, list] = {device_id: [] for device_id in device_ids}
     if device_ids:
@@ -166,6 +177,18 @@ async def list_devices(session: AsyncSession) -> list[DeviceOut]:
     return result
 
 
+async def list_devices(session: AsyncSession) -> list[DeviceOut]:
+    rows = (await session.execute(_device_rows_stmt())).all()
+    return await _devices_out(session, rows)
+
+
+async def get_device_by_code(session: AsyncSession, device_code: str) -> DeviceOut | None:
+    """Satu device berdasarkan kode; query difilter di database, bukan di memori."""
+    rows = (await session.execute(_device_rows_stmt(device_code))).all()
+    devices = await _devices_out(session, rows)
+    return devices[0] if devices else None
+
+
 def local_day_start(now: datetime | None = None) -> datetime:
     """Awal hari (00:00) di zona waktu lokal pabrik, dikembalikan dalam UTC."""
     tz = get_settings().tz
@@ -226,22 +249,49 @@ async def get_energy_totals(
 
 
 async def get_summary(session: AsyncSession) -> SummaryOut:
-    devices = await list_devices(session)
-    incoming = [item for item in devices if item.role == "incoming"]
+    """Ringkasan pabrik tanpa memuat seluruh detail device/fasa.
+
+    Hanya kolom yang dibutuhkan (daya pembacaan terakhir + status alarm) yang
+    diambil, sehingga lebih ringan daripada memanggil list_devices().
+    """
+    latest_reading = aliased(Reading, _latest_reading_lateral())
+    open_alarm = _open_alarm_subquery()
+    rows = (
+        await session.execute(
+            select(
+                Device.role,
+                Device.last_seen_at,
+                latest_reading.power.label("power"),
+                latest_reading.apparent_power.label("apparent_power"),
+                latest_reading.reactive_power.label("reactive_power"),
+                open_alarm.c.rank,
+            )
+            .select_from(Device)
+            .outerjoin(latest_reading, true())
+            .outerjoin(open_alarm, Device.id == open_alarm.c.device_id)
+            .where(Device.is_active.is_(True))
+        )
+    ).all()
+
     now = datetime.now(timezone.utc)
     totals = await get_energy_totals(
         session, start=local_day_start(now), end=now, role="incoming"
     )
 
+    incoming = [row for row in rows if row.role == "incoming"]
+    statuses = [
+        device_status(row.last_seen_at, (row.rank or 0) > 0) for row in rows
+    ]
+
     return SummaryOut(
-        total_power=sum(item.power or 0 for item in incoming),
-        total_apparent_power=sum(item.apparent_power or 0 for item in incoming),
-        total_reactive_power=sum(item.reactive_power or 0 for item in incoming),
+        total_power=sum(row.power or 0 for row in incoming),
+        total_apparent_power=sum(row.apparent_power or 0 for row in incoming),
+        total_reactive_power=sum(row.reactive_power or 0 for row in incoming),
         energy_today=totals.energy_active,
-        online=sum(1 for item in devices if item.status == "online"),
-        warning=sum(1 for item in devices if item.status == "warning"),
-        offline=sum(1 for item in devices if item.status == "offline"),
-        total=len(devices),
+        online=sum(1 for status in statuses if status == "online"),
+        warning=sum(1 for status in statuses if status == "warning"),
+        offline=sum(1 for status in statuses if status == "offline"),
+        total=len(rows),
     )
 
 
@@ -403,21 +453,22 @@ async def get_readings(
     return [_point(row.bucket, row) for row in rows]
 
 
+def alarm_out(alarm: Alarm, device: Device) -> AlarmOut:
+    return AlarmOut(
+        id=str(alarm.id),
+        timestamp=alarm.triggered_at,
+        device_id=device.device_code,
+        device_name=device.name,
+        severity=alarm.severity,  # type: ignore[arg-type]
+        message=alarm.message,
+        acknowledged=alarm.acknowledged,
+    )
+
+
 async def list_alarms(session: AsyncSession, include_cleared: bool = False) -> list[AlarmOut]:
     stmt = select(Alarm, Device).join(Device, Device.id == Alarm.device_id)
     if not include_cleared:
         stmt = stmt.where(Alarm.cleared_at.is_(None))
     stmt = stmt.order_by(Alarm.triggered_at.desc()).limit(200)
     rows = (await session.execute(stmt)).all()
-    return [
-        AlarmOut(
-            id=str(alarm.id),
-            timestamp=alarm.triggered_at,
-            device_id=device.device_code,
-            device_name=device.name,
-            severity=alarm.severity,  # type: ignore[arg-type]
-            message=alarm.message,
-            acknowledged=alarm.acknowledged,
-        )
-        for alarm, device in rows
-    ]
+    return [alarm_out(alarm, device) for alarm, device in rows]

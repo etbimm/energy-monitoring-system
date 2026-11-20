@@ -12,8 +12,10 @@ from app.services.queries import (
     READINGS_1MIN,
     _bucket_expr,
     _bucket_interval,
+    _device_rows_stmt,
     _point,
     _severity_rank,
+    get_summary,
     local_day_start,
     validate_range,
 )
@@ -81,3 +83,62 @@ def test_reversed_range_rejected():
     end = datetime(2026, 11, 9, tzinfo=timezone.utc)
     with pytest.raises(ValueError):
         validate_range(end, end - timedelta(hours=1), "5m")
+
+
+def test_single_device_query_filters_in_database():
+    # get_device_by_code tidak boleh menarik semua device lalu mencari di memori.
+    sql = str(
+        _device_rows_stmt("PM-MCC1-01").compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    assert "devices.is_active IS true" in sql
+    assert "devices.device_code = 'PM-MCC1-01'" in sql
+
+
+class _Rows:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def all(self):
+        return list(self._rows)
+
+
+class _FakeSession:
+    """Session minimal: setiap execute mengembalikan batch berikutnya."""
+
+    def __init__(self, *batches):
+        self._batches = list(batches)
+
+    async def execute(self, _stmt):
+        return _Rows(self._batches.pop(0))
+
+
+@pytest.mark.asyncio
+async def test_summary_uses_lightweight_rows():
+    now = datetime.now(timezone.utc)
+    rows = [
+        SimpleNamespace(
+            role="incoming", last_seen_at=now, power=10.0,
+            apparent_power=12.0, reactive_power=3.0, rank=0,
+        ),
+        # Meter non-incoming tidak ikut total daya, tetapi status tetap dihitung.
+        SimpleNamespace(
+            role="outcoming", last_seen_at=now - timedelta(seconds=60),
+            power=99.0, apparent_power=99.0, reactive_power=99.0, rank=0,
+        ),
+        SimpleNamespace(
+            role="incoming", last_seen_at=None,
+            power=None, apparent_power=None, reactive_power=None, rank=None,
+        ),
+    ]
+    energy = [SimpleNamespace(active=5.0, reactive=2.0, apparent=3.0)]
+
+    summary = await get_summary(_FakeSession(rows, energy))
+
+    assert summary.total_power == 10.0
+    assert summary.total_apparent_power == 12.0
+    assert summary.total_reactive_power == 3.0
+    assert summary.energy_today == 5.0
+    assert (summary.online, summary.warning, summary.offline) == (1, 1, 1)
+    assert summary.total == 3

@@ -17,8 +17,9 @@ from app.acquisition.profiles import (
 )
 from app.api.deps import require_admin
 from app.db import get_session
-from app.models import Alarm, AuditLog, Device, User
+from app.models import Alarm, AlarmSettings, AuditLog, Device, User
 from app.schemas import (
+    AlarmThresholds,
     AuditLogOut,
     DeviceConfigOut,
     DeviceCreate,
@@ -37,6 +38,7 @@ from app.services import audit
 from app.services.auth import hash_password, password_problem
 from app.services.error_reporting import resolve_error
 from app.services.realtime import hub
+from app.services.thresholds import load_thresholds, save_thresholds, set_cached_thresholds
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -419,6 +421,37 @@ async def update_device(
     if before.get("is_active") is True and not device.is_active:
         await resolve_error(f"meter:{device.device_code}", f"Power meter {device.device_code} dinonaktifkan.")
     return _device_out(device)
+
+
+# ---------------------------------------------------------------------------
+# Ambang alarm
+# ---------------------------------------------------------------------------
+
+
+@router.get("/alarm-thresholds", response_model=AlarmThresholds)
+async def get_alarm_thresholds(session: AsyncSession = Depends(get_session)) -> AlarmThresholds:
+    return await load_thresholds(session)
+
+
+@router.put("/alarm-thresholds", response_model=AlarmThresholds)
+async def update_alarm_thresholds(
+    payload: AlarmThresholds,
+    admin: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> AlarmThresholds:
+    before = await load_thresholds(session)
+    await save_thresholds(session, payload)
+    audit.record(
+        session,
+        admin,
+        "alarm_thresholds.update",
+        "alarm_thresholds",
+        {"from": before.model_dump(by_alias=False), "to": payload.model_dump(by_alias=False)},
+    )
+    await session.commit()
+    # Ambang baru langsung dipakai evaluasi alarm berikutnya.
+    set_cached_thresholds(payload)
+    return payload
 
 
 # ---------------------------------------------------------------------------

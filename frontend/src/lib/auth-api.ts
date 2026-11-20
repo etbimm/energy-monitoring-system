@@ -165,6 +165,56 @@ export function updateDevice(
 }
 
 /* ------------------------------------------------------------------ */
+/* Admin: ambang alarm                                                 */
+/* ------------------------------------------------------------------ */
+
+export interface AlarmThresholds {
+  voltageLlWarningLow: number;
+  voltageLlWarningHigh: number;
+  voltageLlCriticalLow: number;
+  voltageLlCriticalHigh: number;
+  powerFactorWarning: number;
+  powerFactorCritical: number;
+  frequencyWarning: number;
+  frequencyCritical: number;
+  thdCurrentWarning: number;
+  thdCurrentCritical: number;
+  unbalanceVoltageWarning: number;
+  unbalanceVoltageCritical: number;
+  loadWarning: number;
+  loadCritical: number;
+}
+
+/** Nilai bawaan backend (dipakai tombol reset di halaman admin). */
+export const DEFAULT_ALARM_THRESHOLDS: AlarmThresholds = {
+  voltageLlWarningLow: 385,
+  voltageLlWarningHigh: 415,
+  voltageLlCriticalLow: 350,
+  voltageLlCriticalHigh: 440,
+  powerFactorWarning: 0.9,
+  powerFactorCritical: 0.85,
+  frequencyWarning: 0.5,
+  frequencyCritical: 1,
+  thdCurrentWarning: 5,
+  thdCurrentCritical: 8,
+  unbalanceVoltageWarning: 2,
+  unbalanceVoltageCritical: 5,
+  loadWarning: 0.8,
+  loadCritical: 0.95,
+};
+
+export function getAlarmThresholds(): Promise<AlarmThresholds> {
+  return request("/api/admin/alarm-thresholds");
+}
+
+export function updateAlarmThresholds(input: AlarmThresholds): Promise<AlarmThresholds> {
+  return request("/api/admin/alarm-thresholds", {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+/* ------------------------------------------------------------------ */
 /* Admin: audit log                                                    */
 /* ------------------------------------------------------------------ */
 
