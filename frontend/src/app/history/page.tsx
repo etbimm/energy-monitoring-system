@@ -8,6 +8,10 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DataState } from "@/components/ui/data-state";
 import { DemoDataNotice } from "@/components/ui/demo-data-notice";
 import {
+  PaginationControls,
+  type PageSize,
+} from "@/components/ui/pagination-controls";
+import {
   DateRangePicker,
   type RangePreset,
 } from "@/components/ui/date-range-picker";
@@ -52,6 +56,8 @@ export default function HistoryPage() {
   const [isDemo, setIsDemo] = useState(DEMO_MODE);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState<PageSize>(20);
 
   useEffect(() => {
     let active = true;
@@ -149,6 +155,12 @@ export default function HistoryPage() {
   const avg = mean(values("power"));
   const avgApparent = mean(values("apparentPower"));
   const avgPf = avg !== null && avgApparent ? avg / avgApparent : null;
+  const pageCount = Math.max(1, Math.ceil(data.length / pageSize));
+  const visiblePage = Math.min(page, pageCount - 1);
+  const pageRows = data.slice(
+    visiblePage * pageSize,
+    visiblePage * pageSize + pageSize,
+  );
   const csv = useMemo(
     () => [
       ["Timestamp", "V", "A", "kW", "kVAR", "kVA", "PF", "Hz", "kWh", "kVARh", "THD-i"],
@@ -200,7 +212,14 @@ export default function HistoryPage() {
         <CardHeader
           title="Konsumsi Daya"
           subtitle={`${range.from} s/d ${range.to} - ${data.length} titik data`}
-          action={<DateRangePicker onChange={setRange} />}
+          action={
+            <DateRangePicker
+              onChange={(nextRange) => {
+                setPage(0);
+                setRange(nextRange);
+              }}
+            />
+          }
         />
         <CardContent>
           <PowerChart
@@ -250,44 +269,58 @@ export default function HistoryPage() {
           {data.length === 0 ? (
             <p className="text-sm text-stone-500">Tidak ada data pada rentang tanggal ini.</p>
           ) : (
-            <div className="max-h-[480px] overflow-auto">
-              <table className="w-full min-w-[960px] text-left text-xs">
-                <thead className="sticky top-0 bg-stone-50 text-stone-500">
-                  <tr>
-                    <th className="px-2 py-2 font-medium">Waktu</th>
-                    <th className="px-2 py-2 text-right font-medium">V</th>
-                    <th className="px-2 py-2 text-right font-medium">A</th>
-                    <th className="px-2 py-2 text-right font-medium">kW</th>
-                    <th className="px-2 py-2 text-right font-medium">kVAR</th>
-                    <th className="px-2 py-2 text-right font-medium">kVA</th>
-                    <th className="px-2 py-2 text-right font-medium">PF</th>
-                    <th className="px-2 py-2 text-right font-medium">Hz</th>
-                    <th className="px-2 py-2 text-right font-medium">kWh</th>
-                    <th className="px-2 py-2 text-right font-medium">kVARh</th>
-                    <th className="px-2 py-2 text-right font-medium">THD-i</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.map((point) => (
-                    <tr key={point.timestamp} className="border-t border-stone-100">
-                      <td className="whitespace-nowrap px-2 py-2">
-                        {new Date(point.timestamp).toLocaleString("id-ID", { timeZone: PLANT_TIME_ZONE })}
-                      </td>
-                      {[point.voltage, point.current, point.power, point.reactivePower,
-                        point.apparentPower, point.powerFactor, point.frequency,
-                        point.energy, point.energyReactive].map((value, index) => (
-                          <td key={index} className="px-2 py-2 text-right tabular-nums">
-                            {formatNumber(value, index === 5 ? 3 : index < 2 || index === 6 ? 2 : 1)}
-                          </td>
-                        ))}
-                      <td className="px-2 py-2 text-right tabular-nums">
-                        {point.thdCurrent === null ? "-" : `${formatNumber(point.thdCurrent)}%`}
-                      </td>
+            <>
+              <div className="max-h-[480px] overflow-auto">
+                <table className="w-full min-w-[960px] text-left text-xs">
+                  <thead className="sticky top-0 bg-stone-50 text-stone-500">
+                    <tr>
+                      <th className="px-2 py-2 font-medium">Waktu</th>
+                      <th className="px-2 py-2 text-right font-medium">V</th>
+                      <th className="px-2 py-2 text-right font-medium">A</th>
+                      <th className="px-2 py-2 text-right font-medium">kW</th>
+                      <th className="px-2 py-2 text-right font-medium">kVAR</th>
+                      <th className="px-2 py-2 text-right font-medium">kVA</th>
+                      <th className="px-2 py-2 text-right font-medium">PF</th>
+                      <th className="px-2 py-2 text-right font-medium">Hz</th>
+                      <th className="px-2 py-2 text-right font-medium">kWh</th>
+                      <th className="px-2 py-2 text-right font-medium">kVARh</th>
+                      <th className="px-2 py-2 text-right font-medium">THD-i</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {pageRows.map((point) => (
+                      <tr key={point.timestamp} className="border-t border-stone-100">
+                        <td className="whitespace-nowrap px-2 py-2">
+                          {new Date(point.timestamp).toLocaleString("id-ID", { timeZone: PLANT_TIME_ZONE })}
+                        </td>
+                        {[point.voltage, point.current, point.power, point.reactivePower,
+                          point.apparentPower, point.powerFactor, point.frequency,
+                          point.energy, point.energyReactive].map((value, index) => (
+                            <td key={index} className="px-2 py-2 text-right tabular-nums">
+                              {formatNumber(value, index === 5 ? 3 : index < 2 || index === 6 ? 2 : 1)}
+                            </td>
+                          ))}
+                        <td className="px-2 py-2 text-right tabular-nums">
+                          {point.thdCurrent === null ? "-" : `${formatNumber(point.thdCurrent)}%`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <PaginationControls
+                page={visiblePage}
+                pageSize={pageSize}
+                itemCount={pageRows.length}
+                totalItems={data.length}
+                hasNextPage={visiblePage + 1 < pageCount}
+                onPageChange={setPage}
+                onPageSizeChange={(nextSize) => {
+                  setPageSize(nextSize);
+                  setPage(0);
+                }}
+              />
+            </>
           )}
         </CardContent>
       </Card>

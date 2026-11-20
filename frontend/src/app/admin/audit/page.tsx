@@ -1,11 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { AdminOnly } from "@/components/auth/admin-only";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Alert, Button, errorMessage } from "@/components/ui/form";
+import {
+  PaginationControls,
+  type PageSize,
+} from "@/components/ui/pagination-controls";
 import { listAuditLog, type AuditEntry } from "@/lib/auth-api";
 import { formatDateTime } from "@/lib/format";
 
@@ -39,18 +43,36 @@ function AuditLogView() {
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState<PageSize>(20);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const requestSequence = useRef(0);
 
   const refresh = useCallback(async () => {
+    const requestId = ++requestSequence.current;
     setLoading(true);
     try {
-      setEntries(await listAuditLog(200));
+      const currentEntries = await listAuditLog(
+        pageSize + 1,
+        page * pageSize,
+      );
+      if (requestId !== requestSequence.current) return;
+      if (currentEntries.length === 0 && page > 0) {
+        setPage((current) => Math.max(0, current - 1));
+        return;
+      }
+      setEntries(currentEntries.slice(0, pageSize));
+      setHasNextPage(currentEntries.length > pageSize);
       setError(null);
     } catch (cause) {
-      setError(errorMessage(cause, "Gagal memuat audit log."));
+      if (requestId === requestSequence.current) {
+        setError(errorMessage(cause, "Gagal memuat audit log."));
+        setHasNextPage(false);
+      }
     } finally {
-      setLoading(false);
+      if (requestId === requestSequence.current) setLoading(false);
     }
-  }, []);
+  }, [page, pageSize]);
 
   useEffect(() => {
     void refresh();
@@ -60,7 +82,7 @@ function AuditLogView() {
     <>
       <PageHeader
         title="Audit Log"
-        description="200 aktivitas terakhir: login, perubahan akun, dan perubahan device"
+        description="Riwayat login dan perubahan konfigurasi administrator"
         action={
           <Button variant="secondary" onClick={() => void refresh()} disabled={loading}>
             <RefreshCw className="h-3.5 w-3.5" aria-hidden />
@@ -107,6 +129,17 @@ function AuditLogView() {
           </table>
         </div>
       </Card>
+      <PaginationControls
+        page={page}
+        pageSize={pageSize}
+        itemCount={entries.length}
+        hasNextPage={hasNextPage}
+        onPageChange={setPage}
+        onPageSizeChange={(nextSize) => {
+          setPageSize(nextSize);
+          setPage(0);
+        }}
+      />
     </>
   );
 }

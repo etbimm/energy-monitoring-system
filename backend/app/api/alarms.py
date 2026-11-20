@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,9 +16,16 @@ router = APIRouter(prefix="/api", tags=["alarms"])
 @router.get("/alarms", response_model=list[AlarmOut])
 async def get_alarms(
     include_cleared: bool = False,
+    limit: int = Query(default=200, ge=1, le=201),
+    offset: int = Query(default=0, ge=0, le=100_000),
     session: AsyncSession = Depends(get_session),
 ) -> list[AlarmOut]:
-    return await list_alarms(session, include_cleared=include_cleared)
+    return await list_alarms(
+        session,
+        include_cleared=include_cleared,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post(

@@ -35,7 +35,7 @@ export function LoadDistributionChart({
   data: { name: string; power: number }[];
 }) {
   return (
-    <div className="h-[300px] w-full">
+    <div className="min-h-[280px] w-full min-w-0 h-[280px] sm:min-h-[320px] sm:h-[320px]">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
           data={data}

@@ -465,10 +465,16 @@ def alarm_out(alarm: Alarm, device: Device) -> AlarmOut:
     )
 
 
-async def list_alarms(session: AsyncSession, include_cleared: bool = False) -> list[AlarmOut]:
+async def list_alarms(
+    session: AsyncSession,
+    include_cleared: bool = False,
+    *,
+    limit: int = 200,
+    offset: int = 0,
+) -> list[AlarmOut]:
     stmt = select(Alarm, Device).join(Device, Device.id == Alarm.device_id)
     if not include_cleared:
         stmt = stmt.where(Alarm.cleared_at.is_(None))
-    stmt = stmt.order_by(Alarm.triggered_at.desc()).limit(200)
+    stmt = stmt.order_by(Alarm.triggered_at.desc(), Alarm.id.desc()).limit(limit).offset(offset)
     rows = (await session.execute(stmt)).all()
     return [alarm_out(alarm, device) for alarm, device in rows]

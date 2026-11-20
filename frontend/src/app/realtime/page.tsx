@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DataState } from "@/components/ui/data-state";
 import { DemoDataNotice } from "@/components/ui/demo-data-notice";
+import { RealtimeConnectionBanner } from "@/components/dashboard/realtime-connection-banner";
 import { getPanelsForDevices } from "@/lib/device-data";
 import { useEMSData } from "@/lib/use-ems-data";
 import { formatNumber, formatTime } from "@/lib/format";
@@ -13,7 +14,14 @@ import { cn } from "@/lib/utils";
 import type { Device } from "@/lib/types";
 
 export default function RealtimePage() {
-  const { devices, summary, loading, error, isDemo, realtime } = useEMSData();
+  const {
+    devices,
+    summary,
+    loading,
+    error,
+    isDemo,
+    realtimeStatus,
+  } = useEMSData();
   const panels = getPanelsForDevices(devices);
   const totals = summary ?? {
     totalPower: 0,
@@ -35,13 +43,16 @@ export default function RealtimePage() {
           <span className="text-xs text-stone-500">
             {isDemo
               ? "Data simulasi"
-              : realtime
+              : realtimeStatus === "connected"
                 ? "Live via WebSocket"
-                : "WebSocket terputus - polling aktif"}
+                : realtimeStatus === "reconnecting"
+                  ? "Mencoba menyambung ulang..."
+                  : "Menghubungkan realtime..."}
           </span>
         }
       />
       {isDemo ? <DemoDataNotice /> : null}
+      <RealtimeConnectionBanner status={realtimeStatus} isDemo={isDemo} />
       <DataState loading={loading} error={error} />
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">

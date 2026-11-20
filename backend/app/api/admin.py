@@ -462,7 +462,13 @@ async def update_alarm_thresholds(
 @router.get("/audit-log", response_model=list[AuditLogOut])
 async def audit_log(
     limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0, le=100_000),
     session: AsyncSession = Depends(get_session),
 ) -> list[AuditLog]:
-    stmt = select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(limit)
+    stmt = (
+        select(AuditLog)
+        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     return list((await session.execute(stmt)).scalars().all())

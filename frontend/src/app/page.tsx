@@ -7,6 +7,7 @@ import { KpiCard } from "@/components/dashboard/kpi-card";
 import { PowerChart } from "@/components/dashboard/power-chart";
 import { LoadDistributionChart } from "@/components/dashboard/load-distribution-chart";
 import { DeviceStatusSummary } from "@/components/dashboard/device-status-summary";
+import { RealtimeConnectionBanner } from "@/components/dashboard/realtime-connection-banner";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DataState } from "@/components/ui/data-state";
 import { DemoDataNotice } from "@/components/ui/demo-data-notice";
@@ -30,7 +31,14 @@ function todayString() {
 }
 
 export default function OverviewPage() {
-  const { devices, summary, loading, error, isDemo } = useEMSData();
+  const {
+    devices,
+    summary,
+    loading,
+    error,
+    isDemo,
+    realtimeStatus,
+  } = useEMSData();
   const [profile, setProfile] = useState<TimeSeriesPoint[]>(() =>
     DEMO_MODE ? generateProfileForRange(todayString(), todayString()) : [],
   );
@@ -105,6 +113,7 @@ export default function OverviewPage() {
         }
       />
       {isDemo || profileIsDemo ? <DemoDataNotice /> : null}
+      <RealtimeConnectionBanner status={realtimeStatus} isDemo={isDemo} />
       <DataState loading={loading} error={pageError || null} />
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">

@@ -116,7 +116,7 @@ function PhaseCard({ device }: { device: Device }) {
       </div>
 
       <div className="mt-3 overflow-x-auto">
-        <table className="w-full text-left text-xs">
+        <table className="w-full min-w-[620px] text-left text-xs">
           <thead>
             <tr className="text-stone-500">
               <th className="py-1 pr-3 font-medium">Fasa</th>

@@ -169,7 +169,7 @@ export function PowerChart({
         : [firstTimestamp, lastTimestamp];
 
   return (
-    <div className="h-[300px] w-full">
+    <div className="min-h-[280px] w-full min-w-0 h-[280px] sm:min-h-[320px] sm:h-[320px]">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <defs>

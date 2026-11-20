@@ -227,6 +227,10 @@ export interface AuditEntry {
   createdAt: string;
 }
 
-export function listAuditLog(limit = 200): Promise<AuditEntry[]> {
-  return request(`/api/admin/audit-log?limit=${limit}`);
+export function listAuditLog(limit = 200, offset = 0): Promise<AuditEntry[]> {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return request(`/api/admin/audit-log?${params}`);
 }

@@ -304,8 +304,17 @@ export function getEnergyTotals({
   return request(`/api/energy?${params}`);
 }
 
-export function getAlarms(includeCleared = false): Promise<Alarm[]> {
-  return request(`/api/alarms?include_cleared=${includeCleared}`);
+export function getAlarms(
+  includeCleared = false,
+  limit = 200,
+  offset = 0,
+): Promise<Alarm[]> {
+  const params = new URLSearchParams({
+    include_cleared: String(includeCleared),
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return request(`/api/alarms?${params}`);
 }
 
 export function acknowledgeAlarm(id: string): Promise<Alarm> {

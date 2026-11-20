@@ -5,13 +5,14 @@ import { Settings2 } from "lucide-react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { PageHeader } from "@/components/layout/page-header";
 import { DeviceLocations } from "@/components/dashboard/device-locations";
+import { RealtimeConnectionBanner } from "@/components/dashboard/realtime-connection-banner";
 import { DataState } from "@/components/ui/data-state";
 import { DemoDataNotice } from "@/components/ui/demo-data-notice";
 import { getPanelsForDevices } from "@/lib/device-data";
 import { useEMSData } from "@/lib/use-ems-data";
 
 export default function DevicesPage() {
-  const { devices, loading, error, isDemo } = useEMSData();
+  const { devices, loading, error, isDemo, realtimeStatus } = useEMSData();
   const { isAdmin } = useAuth();
 
   return (
@@ -37,6 +38,7 @@ export default function DevicesPage() {
         }
       />
       {isDemo ? <DemoDataNotice /> : null}
+      <RealtimeConnectionBanner status={realtimeStatus} isDemo={isDemo} />
       <DataState loading={loading} error={error} />
       <DeviceLocations panels={getPanelsForDevices(devices)} />
     </>

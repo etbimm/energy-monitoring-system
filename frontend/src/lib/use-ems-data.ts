@@ -25,6 +25,8 @@ const REALTIME_FLUSH_MS = 1_000;
 /** Jarak minimum sinkronisasi REST yang dipicu meter baru (belum ada di daftar). */
 const UNKNOWN_DEVICE_SYNC_MS = 10_000;
 
+export type RealtimeStatus = "connecting" | "connected" | "reconnecting";
+
 export function useEMSData() {
   const [devices, setDevices] = useState<Device[]>(DEMO_MODE ? DEVICES : []);
   const [summary, setSummary] = useState<Summary>(DEMO_MODE ? getTotals() : EMPTY_SUMMARY);
@@ -32,6 +34,8 @@ export function useEMSData() {
   const [error, setError] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(DEMO_MODE);
   const [realtime, setRealtime] = useState(false);
+  const [realtimeStatus, setRealtimeStatus] =
+    useState<RealtimeStatus>("connecting");
   const pending = useRef(new Map<string, TelemetryMessage>());
   const isDemoRef = useRef(DEMO_MODE);
   // Kode meter yang sudah ada di daftar; dipakai untuk mengenali meter baru.
@@ -134,10 +138,15 @@ export function useEMSData() {
     const connect = () => {
       if (!active) return;
       socket = new WebSocket(getRealtimeUrl());
-      socket.onopen = () => setRealtime(true);
+      socket.onopen = () => {
+        setRealtime(true);
+        setRealtimeStatus("connected");
+      };
       socket.onclose = () => {
+        if (!active) return;
         setRealtime(false);
-        if (active) retry = window.setTimeout(connect, 3_000);
+        setRealtimeStatus("reconnecting");
+        retry = window.setTimeout(connect, 3_000);
       };
       socket.onerror = () => socket.close();
       socket.onmessage = (event) => {
@@ -173,5 +182,14 @@ export function useEMSData() {
     [isDemo, summary, devices],
   );
 
-  return { devices, summary: liveSummary, loading, error, isDemo, realtime, refresh };
+  return {
+    devices,
+    summary: liveSummary,
+    loading,
+    error,
+    isDemo,
+    realtime,
+    realtimeStatus,
+    refresh,
+  };
 }

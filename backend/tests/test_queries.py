@@ -16,6 +16,7 @@ from app.services.queries import (
     _point,
     _severity_rank,
     get_summary,
+    list_alarms,
     local_day_start,
     validate_range,
 )
@@ -142,3 +143,21 @@ async def test_summary_uses_lightweight_rows():
     assert summary.energy_today == 5.0
     assert (summary.online, summary.warning, summary.offline) == (1, 1, 1)
     assert summary.total == 3
+
+
+@pytest.mark.asyncio
+async def test_alarm_list_applies_server_side_limit_and_offset():
+    class CaptureSession:
+        async def execute(self, statement):
+            self.statement = statement
+            return _Rows([])
+
+    session = CaptureSession()
+    await list_alarms(session, limit=21, offset=40)
+    sql = str(
+        session.statement.compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+
+    assert "LIMIT 21 OFFSET 40" in sql

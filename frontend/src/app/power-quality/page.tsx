@@ -2,6 +2,7 @@
 
 import { Activity, TriangleAlert, Waves } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
+import { RealtimeConnectionBanner } from "@/components/dashboard/realtime-connection-banner";
 import { PhaseDeviceDetails } from "@/components/dashboard/phase-device-details";
 import { ThdDeviceDetails } from "@/components/dashboard/thd-device-details";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -19,7 +20,7 @@ import { formatNumber } from "@/lib/format";
 import type { Device } from "@/lib/types";
 
 export default function PowerQualityPage() {
-  const { devices, loading, error, isDemo } = useEMSData();
+  const { devices, loading, error, isDemo, realtimeStatus } = useEMSData();
   const withTHD = devices.filter(
     (device) => device.status !== "offline" && device.capabilities.thdCurrent,
   );
@@ -58,6 +59,7 @@ export default function PowerQualityPage() {
         }
       />
       {isDemo ? <DemoDataNotice /> : null}
+      <RealtimeConnectionBanner status={realtimeStatus} isDemo={isDemo} />
       <DataState loading={loading} error={error} />
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
