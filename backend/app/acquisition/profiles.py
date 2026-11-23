@@ -19,6 +19,7 @@ class RegisterDef:
     poll: bool = True
     note: str = ""
     word_order: Literal["little", "big"] | None = None
+    optional: bool = False
 
 
 @dataclass(frozen=True)
@@ -43,10 +44,14 @@ PAC3220 = MeterProfile(
     function_code="FC04",
     notes=(
         "Alamat mengikuti kolom Offset pada manual Siemens (offset awal 1); konvensi offset PDU dan urutan word perlu dikonfirmasi pada meter. "
-        "Nilai float IEEE754. Energi double 64-bit ada di manual, tetapi belum dipetakan oleh decoder."
+        "Nilai float IEEE754. Energi aktif dan reaktif impor T1/T2 dibaca dari offset 2801/2803 dan 2809/2811 (Wh/varh), "
+        "lalu dijumlahkan dan dikonversi ke kWh/kVARh. Register kVAh tersedia di offset 2817/2819; demand di offset 501/509. "
+        "Keduanya belum dipoll oleh EMS. Verifikasi offset dan word order saat commissioning."
     ),
-    available=("V", "I", "kW", "kVA", "kVAR", "THD-i", "THD-u", "unbalance", "PF", "Hz"),
-    unavailable=("kWh", "kVAh", "kVARh", "demand"),
+    available=(
+        "V", "I", "kW", "kVA", "kVAR", "kWh", "kVAh", "kVARh", "THD-i",
+        "THD-u", "unbalance", "PF", "Hz", "demand",
+    ),
     registers=(
         RegisterDef(1, 2, "U L1-N", "voltage_l1", "V", "float32", 1),
         RegisterDef(3, 2, "U L2-N", "voltage_l2", "V", "float32", 1),
@@ -82,6 +87,14 @@ PAC3220 = MeterProfile(
         RegisterDef(69, 2, "PF total", "pf_register", "-", "float32", 1, poll=False),
         RegisterDef(71, 2, "Voltage unbalance", "unbalance_voltage", "%", "float32", 1),
         RegisterDef(73, 2, "Current unbalance", "unbalance_current", "%", "float32", 1),
+        RegisterDef(2801, 2, "Active energy import T1", "energy_active_t1", "Wh", "float32", 1000),
+        RegisterDef(2803, 2, "Active energy import T2", "energy_active_t2", "Wh", "float32", 1000),
+        RegisterDef(2809, 2, "Reactive energy import T1", "energy_reactive_t1", "varh", "float32", 1000),
+        RegisterDef(2811, 2, "Reactive energy import T2", "energy_reactive_t2", "varh", "float32", 1000),
+        RegisterDef(2817, 2, "Apparent energy T1", "energy_apparent_t1", "VAh", "float32", 1000, poll=False),
+        RegisterDef(2819, 2, "Apparent energy T2", "energy_apparent_t2", "VAh", "float32", 1000, poll=False),
+        RegisterDef(501, 2, "Average active power import demand", "demand_active_import", "W", "float32", 1000, poll=False),
+        RegisterDef(509, 2, "Maximum active power during demand period", "demand_active_max", "W", "float32", 1000, poll=False),
     ),
     word_order="big",
 )
@@ -93,11 +106,11 @@ DMG510 = MeterProfile(
     default_baud=9600,
     function_code="FC03",
     notes=(
-        "UNVERIFIED against supplied documents: the DMG series protocol PDF lists DMG210/300/700/800/900, "
-        "not DMG510; the supplied DMG510 datasheet has no register table. Obtain the DMG500/510 Modbus map."
+        "Peta register seri DMG mencantumkan DMG210/300/700/800/900; penerapan ke DMG510 dikonfirmasi pengguna. "
+        "Energi semu total tersedia di offset 0x1A28 sebagai unsigned long, skala 100. "
+        "Unbalance tercantum sebagai indeks pengukuran DMECD, bukan offset Modbus langsung, sehingga belum dipoll."
     ),
-    available=("V", "I", "kW", "kVA", "kVAR", "kWh", "kVARh", "THD-i", "THD-u", "PF", "Hz", "demand"),
-    unavailable=("kVAh", "unbalance"),
+    available=("V", "I", "kW", "kVA", "kVAR", "kWh", "kVAh", "kVARh", "THD-i", "THD-u", "unbalance", "PF", "Hz", "demand"),
     registers=(
         RegisterDef(3000, 1, "V L1", "voltage_l1", "V", "uint16", 10),
         RegisterDef(3001, 1, "V L2", "voltage_l2", "V", "uint16", 10),
@@ -114,6 +127,7 @@ DMG510 = MeterProfile(
         RegisterDef(3101, 1, "THD U L1", "thd_voltage_l1", "%", "uint16", 10),
         RegisterDef(3200, 2, "Active energy import", "energy_active", "kWh", "uint32", 100),
         RegisterDef(3202, 2, "Reactive energy import", "energy_reactive", "kVARh", "uint32", 100),
+        RegisterDef(0x1A28, 2, "Total apparent energy", "energy_apparent_register", "kVAh", "uint32", 100, poll=False),
     ),
 )
 
@@ -123,9 +137,15 @@ ELITE440 = MeterProfile(
     default_slave_id=1,
     default_baud=9600,
     function_code="FC03",
-    notes="Alamat 40xxx dikurangi 40001 menjadi offset 0-based; Float32 high-word first.",
-    available=("V", "I", "kW", "kVA", "kVAR", "kWh", "kVARh", "THD-i", "THD-u", "PF", "Hz", "demand"),
-    unavailable=("kVAh", "unbalance"),
+    notes=(
+        "Alamat 40xxx dikurangi 40001 menjadi offset 0-based; Float32 high-word first. "
+        "kVAh import/export tersedia di 40216-40219 pada varian yang mendukungnya. "
+        "Register 40750-40751 adalah bit status: bit 4 voltage imbalance dan bit 14 current imbalance; "
+        "bit ini hanya menandai kondisi, "
+        "bukan nilai unbalance dalam persen."
+    ),
+    available=("V", "I", "kW", "kVA", "kVAR", "kWh", "kVAh", "kVARh", "THD-i", "THD-u", "PF", "Hz", "demand", "unbalance-status"),
+    unavailable=("unbalance-percent",),
     registers=(
         RegisterDef(99, 2, "U L1", "voltage_l1", "V", "float32", 1),
         RegisterDef(101, 2, "U L2", "voltage_l2", "V", "float32", 1),
@@ -158,8 +178,10 @@ ELITE440 = MeterProfile(
         RegisterDef(187, 2, "THD I L3", "thd_current_l3", "%", "float32", 1),
         RegisterDef(199, 2, "Active energy import", "energy_active", "kWh", "float32", 1),
         RegisterDef(201, 2, "Active energy export", "energy_active_export", "kWh", "float32", 1, poll=False),
-        RegisterDef(215, 2, "Apparent energy import", "energy_apparent_register", "kVAh", "float32", 1, poll=False),
+        RegisterDef(215, 2, "Apparent energy import", "energy_apparent_import", "kVAh", "float32", 1, optional=True),
+        RegisterDef(217, 2, "Apparent energy export", "energy_apparent_export", "kVAh", "float32", 1, optional=True),
         RegisterDef(219, 2, "Reactive energy import", "energy_reactive", "kVARh", "float32", 1),
+        RegisterDef(749, 2, "Meter status flags", "status_flags", "bitfield", "uint32", 1, word_order="big"),
     ),
     word_order="big",
 )
@@ -172,10 +194,12 @@ AMC96 = MeterProfile(
     function_code="FC03",
     notes=(
         "Menggunakan register sisi sekunder 0x0100-0x0119 pada manual AMC Series generik; kecocokan varian/firmware AMC96 perlu dikonfirmasi. "
-        "register harmonik memakai skala 0.01%. Energy kWh bergantung rasio PT/CT."
+        "Unbalance tegangan/arus tersedia pada 0x0700/0x0701 sebagai uint16 berskala 0.1%. "
+        "Demand maksimum tampil pada meter, tetapi alamat nilai demand tidak tercantum di tabel Modbus. "
+        "Register harmonik memakai skala 0.01%. Energy kWh bergantung rasio PT/CT."
     ),
-    available=("V", "I", "kW", "kVA", "kVAR", "THD-i", "THD-u", "PF", "Hz"),
-    unavailable=("kVAh", "unbalance", "demand"),
+    available=("V", "I", "kW", "kVA", "kVAR", "THD-i", "THD-u", "unbalance", "PF", "Hz", "demand"),
+    unavailable=("kVAh",),
     registers=(
         RegisterDef(0x0100, 1, "U L1-N", "voltage_l1", "V", "uint16", 10),
         RegisterDef(0x0101, 1, "U L2-N", "voltage_l2", "V", "uint16", 10),
@@ -209,6 +233,8 @@ AMC96 = MeterProfile(
         RegisterDef(0x0403, 1, "THD I L1", "thd_current_l1", "%", "uint16", 100),
         RegisterDef(0x0404, 1, "THD I L2", "thd_current_l2", "%", "uint16", 100),
         RegisterDef(0x0405, 1, "THD I L3", "thd_current_l3", "%", "uint16", 100),
+        RegisterDef(0x0700, 1, "Voltage unbalance", "unbalance_voltage", "%", "uint16", 10),
+        RegisterDef(0x0701, 1, "Current unbalance", "unbalance_current", "%", "uint16", 10),
     ),
 )
 
@@ -302,23 +328,23 @@ MODEL_CATALOG: dict[str, dict] = {
     "SIEMENS PAC3220": {
         "label": "SIEMENS PAC3220",
         "capabilities": {
-            "perPhase": True, "apparentEnergyRegister": False, "thdCurrent": True,
+            "perPhase": True, "apparentEnergyRegister": True, "thdCurrent": True,
             "thdVoltage": True, "maxHarmonicOrder": 40, "unbalance": True,
-            "reactiveEnergy": False, "demand": False,
+            "reactiveEnergy": False, "demand": True,
         },
     },
     "LOVATO DMG510": {
         "label": "LOVATO DMG510",
         "capabilities": {
-            "perPhase": True, "apparentEnergyRegister": False, "thdCurrent": True,
-            "thdVoltage": True, "maxHarmonicOrder": 15, "unbalance": False,
+            "perPhase": True, "apparentEnergyRegister": True, "thdCurrent": True,
+            "thdVoltage": True, "maxHarmonicOrder": 15, "unbalance": True,
             "reactiveEnergy": True, "demand": True,
         },
     },
     "CEWE Elite440": {
         "label": "CEWE Elite440",
         "capabilities": {
-            "perPhase": True, "apparentEnergyRegister": False, "thdCurrent": True,
+            "perPhase": True, "apparentEnergyRegister": True, "thdCurrent": True,
             "thdVoltage": True, "maxHarmonicOrder": 31, "unbalance": False,
             "reactiveEnergy": True, "demand": True,
         },
@@ -327,8 +353,8 @@ MODEL_CATALOG: dict[str, dict] = {
         "label": "Acrel AMC96",
         "capabilities": {
             "perPhase": True, "apparentEnergyRegister": False, "thdCurrent": True,
-            "thdVoltage": True, "maxHarmonicOrder": 31, "unbalance": False,
-            "reactiveEnergy": False, "demand": False,
+            "thdVoltage": True, "maxHarmonicOrder": 31, "unbalance": True,
+            "reactiveEnergy": False, "demand": True,
         },
     },
     "WEIDMULLER EM220": {
@@ -403,13 +429,15 @@ def register_blocks(
     blocks: list[tuple[int, int]] = []
     start = regs[0].addr
     end = regs[0].addr + regs[0].count
+    optional = regs[0].optional
     for reg in regs[1:]:
         reg_end = reg.addr + reg.count
-        if reg.addr <= end + max_gap and (reg_end - start) <= max_size:
+        if reg.optional == optional and reg.addr <= end + max_gap and (reg_end - start) <= max_size:
             end = max(end, reg_end)
         else:
             blocks.append((start, end - start))
             start = reg.addr
             end = reg_end
+            optional = reg.optional
     blocks.append((start, end - start))
     return blocks

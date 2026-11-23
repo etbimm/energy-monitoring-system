@@ -35,10 +35,12 @@ Diturunkan dari kode: `backend/app/api/__init__.py` (router wajib login),
 | Acknowledge Alarm | `/alarms` | `POST /api/alarms/{id}/acknowledge` | ❌ | ✅ |
 | Kelola Akun (cari, tambah, ubah, reset password, nonaktifkan, hapus) | `/admin/users` | `/api/admin/users*` | ❌ | ✅ |
 | Kelola Device (tambah, edit, nonaktifkan) | `/admin/devices` | `/api/admin/devices*`, `/device-models`, `/device-options` | ❌ | ✅ |
+| Kelola Ambang Alarm | `/admin/thresholds` | `GET/PUT /api/admin/alarm-thresholds` | ❌ | ✅ |
 | Lihat Audit Log | `/admin/audit` | `GET /api/admin/audit-log` | ❌ | ✅ |
 
-Akses tanpa login dibalas `401` (frontend mengalihkan ke `/login`); Viewer yang
-memanggil fitur admin dibalas `403`.
+Akses tanpa login ke halaman monitoring dan endpoint data/admin dibalas `401`
+(frontend mengalihkan ke `/login`); Viewer yang memanggil fitur admin dibalas
+`403`. Endpoint Logout tetap dapat dipanggil untuk menghapus cookie sesi.
 
 ## Aturan tambahan
 

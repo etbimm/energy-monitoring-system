@@ -40,8 +40,17 @@ async def read_device(
 ) -> dict:
     """Baca semua blok register satu meter lewat client yang sudah terhubung."""
     blocks: list[tuple[int, list[int]]] = []
+    optional_addresses = {register.addr for register in profile.registers if register.optional}
     for address, count in register_blocks(profile):
-        words = await read_block(client, profile, unit_id, address, count)
+        try:
+            words = await read_block(client, profile, unit_id, address, count)
+        except ModbusException:
+            # Optional registers may not exist on every Elite440 variant.
+            # Keep core telemetry flowing and let kVAh use its derived fallback.
+            if address in optional_addresses:
+                log.info("Meter %s tidak menyediakan blok register opsional %s", device_code, address)
+                continue
+            raise
         blocks.append((address, words))
     decoded = merge_decode(profile, blocks)
     return to_telemetry(device_code, decoded, capabilities)

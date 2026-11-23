@@ -54,8 +54,8 @@ class DeviceOut(CamelModel):
     reactive_power: float | None = None
     energy_active: float | None = None
     energy_reactive: float | None = None
-    power_factor: float | None = None
     energy_apparent: float | None = None
+    power_factor: float | None = None
     thd_current: float | None = None
     thd_voltage: float | None = None
     unbalance_voltage: float | None = None
@@ -182,11 +182,14 @@ class TelemetryIn(BaseModel):
     reactive_power: float | None = None
     energy_active: float | None = None
     energy_reactive: float | None = None
+    energy_apparent: float | None = None
     frequency: float | None = None
     thd_current: float | None = None
     thd_voltage: float | None = None
     unbalance_voltage: float | None = None
     unbalance_current: float | None = None
+    unbalance_voltage_flag: bool | None = None
+    unbalance_current_flag: bool | None = None
     phases: dict | None = None
 
 

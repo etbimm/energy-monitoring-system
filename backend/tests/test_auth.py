@@ -4,10 +4,12 @@ from types import SimpleNamespace
 
 import jwt
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from app import main
+from app.api import auth as auth_api
 from app.api import deps
 from app.services import auth
 
@@ -136,6 +138,43 @@ def test_logout_clears_cookie(client):
     cookie = response.headers["set-cookie"]
     assert main.settings.session_cookie_name in cookie
     assert "Max-Age=0" in cookie or "expires=" in cookie.lower()
+
+
+@pytest.mark.parametrize("role", ["admin", "viewer"])
+async def test_logout_records_authenticated_user(monkeypatch, role):
+    user = SimpleNamespace(id=5, username="budi", role=role)
+
+    class FakeSession:
+        def __init__(self):
+            self.added = []
+            self.committed = False
+
+        def add(self, item):
+            self.added.append(item)
+
+        async def commit(self):
+            self.committed = True
+
+    async def current_user(_session, _token):
+        return user
+
+    monkeypatch.setattr(auth_api, "user_from_token", current_user)
+    cookie = f"{main.settings.session_cookie_name}=valid"
+    request = Request({
+        "type": "http",
+        "headers": [(b"cookie", cookie.encode())],
+        "client": ("127.0.0.1", 12345),
+    })
+    session = FakeSession()
+
+    result = await auth_api.logout(request, Response(), session)
+
+    assert result == {"ok": True}
+    assert session.committed
+    assert len(session.added) == 1
+    assert session.added[0].action == "auth.logout"
+    assert session.added[0].username == "budi"
+    assert session.added[0].detail == {"ip": "127.0.0.1"}
 
 
 def test_websocket_origin_check(monkeypatch):

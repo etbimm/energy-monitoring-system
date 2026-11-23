@@ -6,11 +6,11 @@ Table "devices" {
   "location" text
   "brand" text
   "model" text [not null]
-  "role" text [not null, check: `role = ANY (ARRAY['incoming'::text, 'outcoming'::text, 'distribution'::text])`]
+  "role" text [not null, note: 'Teks non-kosong maks. 40 karakter; Incoming dihitung ke total pabrik.']
   "modbus_host" text
   "modbus_port" int4 [not null, default: 502]
   "modbus_address" int4
-  "transport" text [check: `transport = ANY (ARRAY['rs485'::text, 'ethernet'::text])`]
+  "transport" text [note: 'Teks opsional maks. 40 karakter; label informasional, runtime tetap Modbus TCP.']
   "capabilities" jsonb [not null, default: `{}`]
   "rated_power_kw" float8
   "is_active" bool [not null, default: true]
@@ -38,7 +38,7 @@ Table "users" {
 }
 
 Table "audit_log" {
-  Note: 'Jejak aktivitas: login, kelola akun, kelola device.'
+  Note: 'Jejak autentikasi, pengelolaan akun/device, acknowledge alarm, dan perubahan ambang.'
   "id" int8 [pk, not null, increment]
   "user_id" int4
   "username" text
@@ -120,6 +120,20 @@ Table "alarms" {
 }
 
 Ref "alarms_device_id_fkey":"devices"."id" ?<? "alarms"."device_id"
+
+Table "alarm_settings" {
+  "id" int4 [pk, not null, note: 'Satu baris aktif (id=1)']
+  "thresholds" jsonb [not null, note: 'Ambang yang dapat diubah Admin dari dashboard']
+  "updated_at" timestamptz [not null, default: `now()`]
+}
+
+Table "notification_state" {
+  "key" text [pk, not null]
+  "summary" text [not null]
+  "active_since" timestamptz [not null, default: `now()`]
+
+  Note: 'Status error/alarm aktif untuk mencegah notifikasi Telegram duplikat lintas proses dan restart.'
+}
 
 Ref "phase_readings_device_id_fkey":"devices"."id" <? "phase_readings"."device_id"
 

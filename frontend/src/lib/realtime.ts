@@ -20,6 +20,8 @@ export interface TelemetryMessage {
   thd_voltage?: number | null;
   unbalance_voltage?: number | null;
   unbalance_current?: number | null;
+  unbalance_voltage_flag?: boolean | null;
+  unbalance_current_flag?: boolean | null;
   phases?: Record<string, Partial<Record<string, number | null>>> | null;
 }
 

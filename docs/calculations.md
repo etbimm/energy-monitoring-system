@@ -34,6 +34,7 @@ saat mengubah file kode yang relevan.
 | Perhitungan | Rumus / aturan implementasi | Lokasi dan penggunaan |
 |---|---|---|
 | Skala register ke engineering value | `nilai = raw / skala_register`, dibulatkan 3 desimal. Skala ditetapkan per register/model. | [`backend/app/acquisition/decoder.py`](../backend/app/acquisition/decoder.py); profil dan skalanya di [`backend/app/acquisition/profiles.py`](../backend/app/acquisition/profiles.py). |
+| Unbalance AMC96 | `unbalance (%) = raw_uint16 / 10`; misalnya `20` menjadi `2%`. Input berasal dari register `0x0700` (tegangan) dan `0x0701` (arus), lalu diteruskan ke telemetry bila kapabilitas unbalance aktif. | `RegisterDef` di [`backend/app/acquisition/profiles.py`](../backend/app/acquisition/profiles.py), decode di [`backend/app/acquisition/decoder.py`](../backend/app/acquisition/decoder.py), dan gating/payload di [`backend/app/acquisition/normalize.py`](../backend/app/acquisition/normalize.py). Telemetry produksi; nilai disimpan pada readings. |
 | Interpretasi integer signed | `int16 = raw - 2^16` jika `raw > 2^15 - 1`; `int32 = raw - 2^32` jika nilai unsigned `> 2^31 - 1`; selain itu nilai dipertahankan. | [`backend/app/acquisition/decoder.py`](../backend/app/acquisition/decoder.py). |
 | Gabung register 32-bit | Little-endian: `low + high × 65536`. Big-endian: `high × 65536 + low`. | [`backend/app/acquisition/decoder.py`](../backend/app/acquisition/decoder.py). |
 | Nilai tegangan/arus meter rata-rata | `mean(x) = Σ nilai fasa yang tersedia / jumlah nilai fasa yang tersedia`; hasil dibulatkan 3 desimal. Jika tidak ada input, hasil `null`. | [`backend/app/acquisition/normalize.py`](../backend/app/acquisition/normalize.py). Arus mengambil arus fasa. |
@@ -48,14 +49,14 @@ saat mengubah file kode yang relevan.
 | Perhitungan | Rumus / aturan implementasi | Lokasi dan penggunaan |
 |---|---|---|
 | PF total dan per fasa | `PF = abs(P / S)`, dibulatkan 3 desimal. Jika P atau S kosong, atau S = 0, hasil `null`. PF yang dikirim meter ditimpa. | [`backend/app/services/derive.py`](../backend/app/services/derive.py), dipanggil saat ingest di [`backend/app/services/ingest.py`](../backend/app/services/ingest.py). |
-| Energi semu (counter kVAh) | Diintegrasikan per interval: `kVAh_n = kVAh_(n-1) + ΔkWh / PF_rata2`, dengan `ΔkWh = kWh_n - kWh_(n-1)` dan `PF_rata2` = rata-rata PF awal & akhir interval yang tersedia; dibulatkan 3 desimal. Nilai awal (belum ada pembacaan sebelumnya) dan setelah counter kWh turun/reset: `kWh / PF` (2 desimal). Jika PF kosong di kedua ujung (S = 0): `ΔkVAh = ΔkWh`. kWh kosong → `null`. | `integrate_energy_apparent` di [`backend/app/services/derive.py`](../backend/app/services/derive.py); pembacaan sebelumnya diambil di [`backend/app/services/ingest.py`](../backend/app/services/ingest.py). |
+| Energi semu (counter kVAh) | ELITE440 memakai counter native import + export; meter lain memakai integrasi per interval: `kVAh_n = kVAh_(n-1) + ΔkWh / PF_rata2`. Nilai awal/reset memakai `kWh / PF`; jika PF tidak tersedia di kedua ujung, `ΔkVAh = ΔkWh`. | Counter native dipetakan di [`backend/app/acquisition/profiles.py`](../backend/app/acquisition/profiles.py); integrasi fallback di [`backend/app/services/derive.py`](../backend/app/services/derive.py). |
 
 **Catatan semantik kVAh:** rumus lama `kVAh = kWh kumulatif / PF sesaat`
 menghasilkan counter yang naik-turun mengikuti PF (mis. 1000/0,80 = 1250 lalu
 1001/0,99 = 1011), sehingga selisih kVAh antar waktu tidak bermakna. Integrasi
 per interval di atas adalah bentuk umum `∫kVA dt = ∫kW dt / PF` dari
-spesifikasi dan selalu monoton naik. Register kVAh meter (PAC3220) tetap tidak
-dipakai, sesuai prinsip "nilai turunan = sumber kebenaran tunggal".
+spesifikasi. ELITE440 menggunakan counter kVAh native yang tertera pada
+mapping register; meter lain tanpa counter native tetap memakai integrasi.
 
 ## 3. Agregasi query, ringkasan, dan histori
 

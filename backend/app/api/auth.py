@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, user_from_token
 from app.config import get_settings
 from app.db import get_session
 from app.models import User
@@ -90,8 +90,19 @@ async def login(
 
 
 @router.post("/logout")
-async def logout(response: Response) -> dict[str, bool]:
+async def logout(
+    request: Request,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, bool]:
     # Tidak wajib login: cookie kedaluwarsa pun tetap bisa dihapus.
+    user = await user_from_token(
+        session,
+        request.cookies.get(get_settings().session_cookie_name),
+    )
+    if user is not None:
+        audit.record(session, user, "auth.logout", user.username, {"ip": client_ip(request)})
+        await session.commit()
     clear_session_cookie(response)
     return {"ok": True}
 

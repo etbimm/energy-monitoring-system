@@ -21,7 +21,7 @@ from pathlib import Path
 
 OUT = Path(__file__).resolve().parents[1] / "docs" / "user-role"
 NAME = "user-role-diagram"
-W, H = 1500, 1215
+W, H = 1500, 1280
 FONT = "Arial, Helvetica, sans-serif"
 
 # Palet sama dengan flowchart (scripts/generate_flowcharts.py).
@@ -97,9 +97,9 @@ class Box:
 # Isi diagram (diturunkan dari kode, lihat docstring)
 # ---------------------------------------------------------------------------
 
-SYSTEM = Box("system", "Energy Monitoring System — Web Dashboard Java Wood Pellet", 200, 40, 1060, 960, "system")
+SYSTEM = Box("system", "Energy Monitoring System — Web Dashboard Java Wood Pellet", 200, 40, 1060, 1020, "system")
 PKG_VIEW = Box("pkg_view", "Monitoring (Viewer & Admin)", 235, 95, 400, 880, "package-view")
-PKG_ADMIN = Box("pkg_admin", "Administrasi (khusus Admin)", 665, 95, 560, 880, "package-admin")
+PKG_ADMIN = Box("pkg_admin", "Administrasi (khusus Admin)", 665, 95, 560, 940, "package-admin")
 
 VIEW_X, VIEW_W, VIEW_H, VIEW_STEP = 275, 320, 58, 86
 _view = [
@@ -124,6 +124,7 @@ ADMIN_MAIN = [
     UseCase("uc_devmgmt", "Kelola Device", MAIN_X, 600, MAIN_W, MAIN_H, True),
     UseCase("uc_audit", "Lihat Audit Log", MAIN_X, 760, MAIN_W, MAIN_H, True),
     UseCase("uc_ack", "Acknowledge Alarm", MAIN_X, 870, MAIN_W, MAIN_H, True),
+    UseCase("uc_thresholds", "Atur Ambang Alarm", MAIN_X, 945, MAIN_W, MAIN_H, True),
 ]
 _user_subs = [
     ("uc_u_search", "Cari & filter akun"),
@@ -155,7 +156,7 @@ EXTENDS = [("uc_ack", "uc_alarms")]  # acknowledge memperluas "Lihat Alarm"
 
 NOTES = [
     "Catatan:",
-    "1. Semua use case selain Login mensyaratkan sesi login (JWT di cookie httpOnly). Tanpa login, halaman dialihkan ke /login.",
+    "1. Use case monitoring/admin dan ganti password memerlukan sesi JWT; Login dan Logout dapat dipanggil tanpa sesi aktif.",
     "2. Admin mewarisi seluruh use case Viewer (generalisasi). Batasan diterapkan di backend (401/403), menu admin hanya disembunyikan di frontend.",
     "3. Admin tidak dapat menurunkan role, menonaktifkan, atau menghapus akunnya sendiri; minimal satu admin aktif harus tetap ada.",
     "4. Admin pertama dibuat lewat CLI server: python -m app.cli create-admin (tidak ada registrasi publik).",

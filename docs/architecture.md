@@ -3,45 +3,43 @@
 ## Diagram Alur Data
 
 ```
-[Lapisan Field]
-Power Meter (Modbus RTU / Modbus TCP)
-    |
-    | RS485 (sebagian meter) / Ethernet (PAC3220)
-    v
-RS485 to Ethernet Converter  (meter RS485)
-    |
-    v
-Switch / Jaringan LAN
-    |
-    v
-[Lapisan Server]
-Server (Linux / Docker)
-    |
-    |-- Acquisition (Python + pymodbus)
-    |     poll register, decode per model (skala, word order, satuan)
-    |     publish JSON engineering ke MQTT
-    |
-    |-- Mosquitto     : MQTT broker
-    |
-    |-- Backend API   : FastAPI
-    |     subscribe MQTT, hitung PF & kVAh, simpan DB, REST + WebSocket
-    |
-    |-- PostgreSQL    : + TimescaleDB untuk data time-series
-    |
-    v
-[Lapisan Presentation]
-Frontend Dashboard (Next.js) : fetch REST + listen WebSocket
+Power Meter --RS485 / Ethernet--> Gateway (bila digunakan)
+                                      |
+                   mode modbus: Modbus TCP
+                                      v
+Simulator --------------------> Acquisition worker (Python)
+                                 |  baca konfigurasi meter aktif dari DB
+                                 |  poll setiap 5 detik; gateway paralel,
+                                 |  meter pada gateway yang sama berurutan
+                                 |  publish telemetry dan status
+                                 v
+                         Mosquitto (MQTT QoS 1)
+                                 |
+                                 | subscriber hanya topic telemetry
+                                 v
+Frontend (Next.js) <--> Backend API (FastAPI) : REST request/response + WebSocket
+  login diperlukan;                |  hitung PF dan integrasi kVAh
+  REST sinkron berkala             |  ingest, alarm, REST, WebSocket
+                                   v
+                         PostgreSQL + TimescaleDB
+                         devices, readings, phase_readings,
+                         alarms, users, audit_log, alarm_settings,
+                         notification_state, continuous aggregates
 ```
 
-Akuisisi dan decode register dilakukan oleh proses Python
-`backend/app/acquisition`.
+Backend API dan acquisition adalah proses/container terpisah. Acquisition
+memakai konfigurasi meter aktif dari database dan mengirim telemetry serta
+status ke broker; subscriber backend memproses telemetry. Status online/offline
+dashboard dihitung backend dari `last_seen_at`, bukan dari konsumsi topic status.
+Pada mode `simulator`, telemetry dibuat lokal tanpa komunikasi Modbus. Frontend
+dijalankan terpisah dan mengakses API melalui REST serta WebSocket `/ws`.
 
 ## Kenapa tetap ada MQTT?
 
 Poller dan API dipisah:
 
 - FastAPI tidak perlu memegang socket Modbus
-- Kalau API restart, broker menahan publish (QoS 1)
+- Acquisition dan API berjalan sebagai service terpisah; MQTT memakai QoS 1
 - Consumer lain (nanti: billing, historian) cukup subscribe
 - Mode `simulator` dan mode `modbus` memakai kontrak topic yang sama
 
@@ -50,8 +48,10 @@ Poller dan API dipisah:
 ```
 ems/meter/{device_code}/telemetry     -> payload JSON reading (satuan engineering)
 ems/meter/{device_code}/status        -> online / offline
-ems/alarm                             -> payload JSON alarm (opsional, REST tetap sumber)
 ```
+
+Acquisition menerbitkan topic telemetry dan status. Backend subscribe hanya ke
+topic telemetry; alarm diproses backend lalu disampaikan lewat REST/WebSocket.
 
 Contoh payload telemetry:
 
@@ -91,9 +91,11 @@ GET  /api/devices
 GET  /api/devices/{device_code}
 GET  /api/devices/{device_code}/latest
 GET  /api/readings?device=&from=&to=&bucket=&role=
+GET  /api/energy?device=&from=&to=&role=
 GET  /api/summary/today
 GET  /api/alarms
 POST /api/alarms/{id}/acknowledge
+GET/PUT /api/admin/alarm-thresholds  (khusus Admin)
 WS   /ws
 ```
 
@@ -111,9 +113,10 @@ Sumber kebenaran profil register: `backend/app/acquisition/profiles.py`
 | ACREL AMC96 | uint16 | 10 / 100 | FC03 |
 | WEIDMULLER EM220 | uint32 / uint16 / float32 THD-I | 1000 / 100 / 1 | FC04 |
 
-Word order default: little-endian (low word dulu); EM220 THD-I memakai float32
-ABCD big-endian pada register `0x00F0`, `0x00F2`, dan `0x00F4`. PF dan kVAh
-native tidak dipoll.
+Word order default: little-endian (low word dulu); register Float32 Elite440
+dan EM220 memakai high-word first. ELITE440 mempoll kVAh import/export di
+offset `215`/`217` (register `40216`/`40218`) dan status flags di offset `749`
+(register `40750`). Bit 4 dan 14 menandai voltage/current imbalance.
 
 ## Konsep Penting
 
@@ -121,9 +124,11 @@ native tidak dipoll.
 TimescaleDB hypertable untuk `readings` dan `phase_readings`.
 
 **Pisahkan real-time dan historis.**
-- Real-time: MQTT + memori + WebSocket
-- Historis: query DB dengan `time_bucket`
+- Real-time: MQTT telemetry -> ingest -> database dan WebSocket
+- Historis: query DB/continuous aggregate dengan `time_bucket`
 
 **Downsampling.**
-Continuous aggregate 1 menit, 15 menit, dan harian. Energi harian = delta
-register kumulatif (`last - first`), bukan `SUM(power)`.
+Continuous aggregate 1 menit, 15 menit, dan harian. Pembacaan mentah
+dikompresi setelah 7 hari dan dihapus setelah 90 hari; aggregate disimpan
+permanen. Energi harian = delta register kumulatif (`last - first`), bukan
+`SUM(power)`.

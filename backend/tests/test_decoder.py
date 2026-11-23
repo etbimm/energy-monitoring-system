@@ -1,4 +1,5 @@
-from app.acquisition.decoder import decode, read_float32_le, read_int32_le, read_uint32_le
+from app.acquisition.decoder import decode, decode_by_key, read_float32_le, read_int32_le, read_uint32_le
+from app.acquisition.normalize import to_telemetry
 from app.acquisition.profiles import DEVICE_MODEL, PROFILES, register_blocks
 
 
@@ -83,8 +84,11 @@ def test_registry_integrity():
     for model in DEVICE_MODEL.values():
         assert model in PROFILES
     with_kvah = [p for p in PROFILES.values() if "kVAh" in p.available]
-    assert len(with_kvah) == 1
-    assert with_kvah[0].model == "WEIDMULLER EM220"
+    assert {profile.model for profile in with_kvah} == {
+        "SIEMENS PAC3220",
+        "LOVATO DMG510",
+        "WEIDMULLER EM220",
+    }
     with_thd = [p for p in PROFILES.values() if "THD-i" in p.available]
     assert len(with_thd) == len(PROFILES)
     assert "THD-u" in PROFILES["WEIDMULLER EM220"].available
@@ -95,6 +99,59 @@ def test_registry_integrity():
         for reg in PROFILES["WEIDMULLER EM220"].registers
         if reg.key.startswith("thd_current_")
     } == {"big"}
+
+
+def test_pac3220_native_kvah_and_demand_registers_are_documented_but_not_polled():
+    profile = PROFILES["SIEMENS PAC3220"]
+    registers = {register.key: register for register in profile.registers}
+
+    assert {"kVAh", "demand"} <= set(profile.available)
+    assert not {"kVAh", "demand"} & set(profile.unavailable)
+    assert registers["energy_apparent_t1"].addr == 2817
+    assert registers["energy_apparent_t1"].unit == "VAh"
+    assert registers["energy_apparent_t2"].addr == 2819
+    assert registers["demand_active_import"].addr == 501
+    assert registers["demand_active_max"].addr == 509
+    assert all(
+        not registers[key].poll
+        for key in (
+            "energy_apparent_t1",
+            "energy_apparent_t2",
+            "demand_active_import",
+            "demand_active_max",
+        )
+    )
+
+
+def test_dmg510_native_kvah_and_unbalance_capabilities():
+    profile = PROFILES["LOVATO DMG510"]
+    registers = {register.key: register for register in profile.registers}
+    apparent_energy = registers["energy_apparent_register"]
+
+    assert {"kVAh", "unbalance"} <= set(profile.available)
+    assert not {"kVAh", "unbalance"} & set(profile.unavailable)
+    assert (apparent_energy.addr, apparent_energy.count) == (0x1A28, 2)
+    assert (apparent_energy.type, apparent_energy.scale, apparent_energy.poll) == (
+        "uint32",
+        100,
+        False,
+    )
+    assert not any(register.key.startswith("unbalance_") for register in profile.registers)
+
+
+def test_amc96_unbalance_registers_are_scaled_and_normalized():
+    profile = PROFILES["ACREL AMC96"]
+    decoded = decode_by_key(profile, [20, 37], base_addr=0x0700)
+
+    assert decoded["unbalance_voltage"] == 2
+    assert decoded["unbalance_current"] == 3.7
+    assert {"unbalance", "demand"} <= set(profile.available)
+    assert not {"unbalance", "demand"} & set(profile.unavailable)
+    assert not any(register.key == "demand" for register in profile.registers)
+
+    telemetry = to_telemetry("AMC96", decoded, {"unbalance": True})
+    assert telemetry["unbalance_voltage"] == 2
+    assert telemetry["unbalance_current"] == 3.7
 
 
 def test_register_layout():

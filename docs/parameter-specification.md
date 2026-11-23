@@ -75,10 +75,10 @@ Parameter tidak dikumpulkan semua lewat Modbus. Ada tiga lapis dengan alasan ber
 | Parameter | Rumus | Alasan diturunkan |
 |---|---|---|
 | **Power Factor** | `PF = kW / kVA` | Register PF tiap model bisa berbeda definisi (PF total vs PF per fasa, tanda leading/trailing). Mengambil dari register ✗ bisa tidak konsisten dengan kW & kVA yang ditampilkan. |
-| **kVAh (energy semu)** | `kVAh = kWh / PF` | **Hanya 1 dari 5 model (PAC3220) punya register kVAh.** 17 meter lain akan selalu 0. Untuk PF konstan, `∫kVA dt = ∫kW dt / PF`. |
+| **kVAh (energy semu)** | Umumnya diintegrasikan dari `ΔkWh / PF_rata2`; ELITE440 memakai counter native import + export. | Backend menghitungnya untuk meter tanpa counter native. ELITE440 membaca Float32 high-word-first dari register `40216–40217` (import) dan `40218–40219` (export). |
 
-> **Nilai turunan = sumber kebenaran tunggal.** Register PF dan kVAh dari meter
-> diabaikan agar tidak ada dua angka berbeda untuk hal yang sama.
+> PF tetap dihitung backend. Untuk kVAh, ELITE440 memakai counter native; meter
+> lain memakai integrasi backend bila tidak mempoll counter native.
 
 ### 3.3 Lapis OPSIONAL — nullable, per meter
 
@@ -87,8 +87,15 @@ Parameter tidak dikumpulkan semua lewat Modbus. Ada tiga lapis dengan alasan ber
 | **THD-I** (THD arus) | % | Semua model meter yang digunakan |
 | **THD-U** (THD tegangan) | % | PAC3220, DMG510, Elite440, AMC96 | Tidak tersedia di EM220 |
 | THD-P (THD daya) | % | Elite440 | rata-rata, s/d orde 31 |
-| Unbalance Voltage | % | PAC3220 | |
-| Unbalance Current | % | PAC3220 | |
+| Unbalance Voltage | % | PAC3220, AMC96 | AMC96: register `0x0700`, skala `/10`; ELITE440 tidak menyediakan nilai persen |
+| Unbalance Current | % | PAC3220, AMC96 | AMC96: register `0x0701`, skala `/10`; ELITE440 tidak menyediakan nilai persen |
+
+ELITE440 menyediakan **flag status** pada register `40750–40751` (offset
+`749`, UInt32 high-word-first): bit 4 = voltage imbalance dan bit 14 = current
+imbalance. Flag ini menandakan status/kondisi alarm dan tidak menyatakan besar
+unbalance dalam persen, sehingga tidak dipetakan ke kolom nilai persentase.
+Flag tersedia pada payload real-time; tabel readings tetap hanya menyimpan
+nilai unbalance numerik bila meter menyediakannya.
 
 Nilai THD tetap **nullable** sebelum pembacaan pertama atau saat meter offline.
 Nilai kosong pada keadaan tersebut berarti data belum diterima, bukan berarti
@@ -100,7 +107,7 @@ meter tidak memiliki kapabilitas THD.
 |---|---|
 | THD per harmonik (orde 2..31) | Terlalu banyak register; THD total sudah cukup untuk screening. Tersedia bila butuh, via profil model. |
 | Arus per fasa pada level detail | Sudah ada di lapis inti |
-| Demand (max demand) | Tersedia di 4 model, format berbeda. Defer ke fase berikutnya. |
+| Demand (max demand) | Tersedia di semua model. AMC96 menampilkan nilai demand maksimum dan waktu, tetapi alamat nilai Modbus tidak ditemukan; belum dipoll/disimpan EMS. |
 | Import/export energy terpisah | Hanya DMG510 & EM220 (4 kuadran). Defer ke fase berikutnya. |
 
 ---
@@ -111,13 +118,14 @@ meter tidak memiliki kapabilitas THD.
 |---|:--:|:--:|:--:|:--:|:--:|
 | V / I / kW / kVA / kVAR | ✅ | ✅ | ✅ | ✅ | ✅ |
 | kWh / kVARh | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **kVAh native** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **kVAh native** | ✅ | ✅ | ✅ | ❌ | ✅ |
 | **THD-I** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | THD-U | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Unbalance V / I | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Unbalance V / I (nilai %) | ✅ | ✅ | ❌ | ✅ | ❌ |
+| Flag status unbalance | — | — | ✅ | — | — |
 | PF | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Hz | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Demand | ✅ | ✅ | ✅ | ❌ | ✅ |
+| Demand | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Per fasa | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Orde harmonik maks | 40 | 15 | 31 | 31 | — |
 | Akurasi daya | — | Class 1 (kWh) | 0,2s/0,5s/1,0 | Class 1,0 | 0,5S (kWh) |
@@ -150,10 +158,13 @@ Contoh: AMC96 register 6 (uint16) berisi 1186 → publish `power: 118.6` kW (ska
 | Jebakan | Detail | Penanganan |
 |---|---|---|
 | **Skala berbeda per model** | PAC3220 & Elite440: float skala 1. AMC96: uint16 skala 10. DMG510: int32 skala 100. EM220: uint32 skala 1000. | Ambil `scale` dari `profiles.py` per model. **Jangan hardcode.** |
-| **Float vs integer** | PAC3220 & Elite440 IEEE754 little-endian (2 register). | Decoder terpisah; `parseInt` akan menghasilkan 0 atau angka sampah. |
-| **Register 32-bit terbelah** | kWh & kVARh = 2 register 16-bit, little-endian (low word dulu). | Gabung: `low + high × 65536`. |
+| **Float vs integer** | PAC3220 & Elite440 memakai IEEE754 float; format dan urutan word ditetapkan per register/model. | Decoder mengikuti profil; verifikasi word order PAC3220 saat commissioning. |
+| **Energi PAC3220** | Datasheet mencantumkan energi aktif impor T1/T2 pada offset 2801/2803 (Wh) dan energi reaktif impor T1/T2 pada 2809/2811 (varh), masing-masing float32. | Profil runtime membaca empat register, menjumlahkan T1+T2, lalu membagi 1000 untuk kWh/kVARh. Konfirmasi offset PDU, function code, dan word order saat commissioning. |
+| **Register 32-bit terbelah** | Beberapa model menyimpan kWh/kVARh sebagai dua register 16-bit dengan urutan kata yang ditentukan per profil. | Decode mengikuti tipe data dan word order per model; jangan menganggap semua register memakai little-endian. |
 | **Multiplier CT** | Meter menerima CT sekunder 1 A / 5 A. | Set rasio CT di alat. Verifikasi saat commissioning. |
-| **KVAh** | 17 dari 18 meter tidak punya register ini. | **Jangan poll.** Hitung di backend dari kWh & PF. |
+| **KVAh** | ELITE440 memakai counter native import/export pada varian yang mendukungnya. PAC3220, DMG510, dan EM220 memiliki register native yang belum dipoll. | ELITE440 menggunakan counter native; meter lainnya memakai integrasi backend dari kWh & PF. |
+| **Unbalance LOVATO** | Peta seri DMG mencantumkan current unbalance dan voltage asymmetry sebagai indeks DMECD; pengguna mengonfirmasi penerapan peta ke DMG510. Belum ada offset Modbus langsung yang dipoll EMS. | Tetap nullable sampai jalur pembacaan indeks tersedia. |
+| **Demand AMC96** | Manual menunjukkan demand maksimum pada tampilan meter, tetapi tidak mencantumkan alamat Modbus untuk nilainya. | Kapabilitas ditandai tersedia; pengumpulan ditunda sampai register terkonfirmasi. |
 | **PF** | Definisi register berbeda antar model. | **Jangan poll.** Hitung di backend dari kW & kVA. |
 | **THD** | Baca THD-I pada semua model dan THD-U pada model yang menyediakan register. EM220: THD-I fase A/B/C float32 ABCD di `0x00F0`, `0x00F2`, `0x00F4` (FC04). | Normalisasi ke persen; nilai yang belum dibaca tetap `null`. |
 | **DMG510 THD mati** | Perlu `P02.12 = THD+HAR`. | Set parameter saat commissioning, lalu verifikasi nilainya non-null. |
@@ -194,7 +205,7 @@ Kaidah:
 - Semua nilai sudah **satuan engineering** (SI), bukan register mentah.
 - Field opsional yang tidak tersedia diisi **`null`**, bukan `0` dan bukan dihilangkan.
 - `power_factor` **tidak** dikirim dari poller — dihitung backend.
-- `energy_apparent` (kVAh) **tidak** dikirim dari poller — dihitung backend.
+- `energy_apparent` (kVAh) dikirim native untuk ELITE440; meter lainnya mengandalkan integrasi backend.
 - Timestamp dalam ISO-8601 UTC.
 
 ---
@@ -460,7 +471,15 @@ konsumsi energi.
 |---|---|---|
 | SIEMENS PAC3220 | Equipment Manual, L1V30425208F_RS-AA_002, 07/2024 (160 hal) | `Datasheet Power Meter/Siemens PAC3220 Datasheet.pdf` |
 | LOVATO DMG510 | Installation manual, 604 GB I 09 19 (12 hal) | `Datasheet Power Meter/Lovato DMG510 Datasheet.pdf` |
+| LOVATO DMG Series | Modbus Register, AHIT107C0208 (41 hal) | `Datasheet Power Meter/513312591-Lovato-DMG-Series-Modbus-Register.pdf` |
 | CEWE Elite440 | Datasheet, 7-18/Nov 21 (4 hal) | `Datasheet Power Meter/Elite440 CEWE Datasheet.pdf` |
+| CEWE Elite440 | Modbus mapping workbook | `Datasheet Power Meter/Copy_of_Elite_440_Modbus_Mapping.xlsx` |
 | ACREL AMC96 | Datasheet AMC96L-E4 (2 hal) | `Datasheet Power Meter/Acrel AMC96 Datasheet.pdf` |
+| ACREL AMC Series | Manual V1.8, register Modbus RTU (38 hal) | `Datasheet Power Meter/AMC-Manual-Modbus-Register.pdf` |
 | WEIDMULLER EM220 | Data sheet EM220-RTU-4DI2DO, 25.02.2026 (4 hal) | `Datasheet Power Meter/Weidmuller EM220 Datasheet.pdf` |
 | SIEMENS 7SR51 | — (tidak dipakai sebagai power meter) | `Datasheet Power Meter/Siemens 7SR51 Datasheet.pdf` |
+
+Peta register seri DMG mencantumkan DMG210/300/700/800/900. Penerapannya ke
+DMG510 dikonfirmasi untuk proyek ini. Register kVAh native dipetakan tetapi
+belum dipoll; unbalance hanya tercantum sebagai indeks DMECD, belum sebagai
+offset Modbus yang dapat dipoll EMS.

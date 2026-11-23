@@ -6,8 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_admin
 from app.db import get_session
-from app.models import Alarm, Device
+from app.models import Alarm, Device, User
 from app.schemas import AlarmOut
+from app.services import audit
 from app.services.queries import alarm_out, list_alarms
 
 router = APIRouter(prefix="/api", tags=["alarms"])
@@ -31,9 +32,12 @@ async def get_alarms(
 @router.post(
     "/alarms/{alarm_id}/acknowledge",
     response_model=AlarmOut,
-    dependencies=[Depends(require_admin)],
 )
-async def acknowledge_alarm(alarm_id: int, session: AsyncSession = Depends(get_session)) -> AlarmOut:
+async def acknowledge_alarm(
+    alarm_id: int,
+    admin: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> AlarmOut:
     # Ambil alarm beserta device-nya sekali saja, lalu bentuk respons dari
     # objek yang sama (tanpa query ulang seluruh daftar alarm).
     row = (
@@ -50,6 +54,13 @@ async def acknowledge_alarm(alarm_id: int, session: AsyncSession = Depends(get_s
     alarm.acknowledged = True
     alarm.acknowledged_at = datetime.now(timezone.utc)
     await session.flush()
+    audit.record(
+        session,
+        admin,
+        "alarm.acknowledge",
+        device.device_code,
+        {"alarm_id": alarm.id, "severity": alarm.severity},
+    )
     result = alarm_out(alarm, device)
     await session.commit()
     return result

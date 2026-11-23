@@ -26,7 +26,7 @@ export type MeterModel =
 export interface MeterCapabilities {
   /** Pengukuran per fasa (L1/L2/L3) */
   perPhase: boolean;
-  /** Register kVAh native (hanya PAC3220) */
+  /** Register kVAh native */
   apparentEnergyRegister: boolean;
   /** THD arus */
   thdCurrent: boolean;
@@ -75,7 +75,7 @@ export interface PhaseReading {
  *
  * Pengelompokan nilai mengikuti tiga lapis yang disepakati:
  *   L1 INTI      : V, I, kW, kVA, kVAR, kWh, kVARh  -> dipoll dari meter
- *   L2 TURUNAN   : PF, kVAh                          -> dihitung di backend
+ *   L2 TURUNAN   : PF; kVAh kecuali ELITE440 native -> dihitung di backend
  *   L3 OPSIONAL  : THD-i, THD-u, unbalance           -> hanya bila didukung
  */
 export interface Device {

@@ -25,6 +25,10 @@ body {
   color: #0a0a0a;
 }
 
+.login-password-input::-ms-reveal {
+  display: none;
+}
+
 /* scrollbar subtle */
 ::-webkit-scrollbar {
   width: 10px;

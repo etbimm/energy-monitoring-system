@@ -62,11 +62,14 @@ def integrate_energy_apparent(
 
 
 def apply_derived(payload: dict, previous: PreviousReading | None = None) -> dict:
-    """PF dan kVAh selalu dihitung di backend, tidak diambil dari register meter."""
+    """Hitung PF dan kVAh bila meter tidak menyediakan counter kVAh native."""
     result = dict(payload)
     pf = derive_power_factor(result.get("power"), result.get("apparent_power"))
     result["power_factor"] = pf
-    result["energy_apparent"] = integrate_energy_apparent(result.get("energy_active"), pf, previous)
+    if result.get("energy_apparent") is None:
+        result["energy_apparent"] = integrate_energy_apparent(
+            result.get("energy_active"), pf, previous
+        )
 
     phases = result.get("phases") or {}
     for phase_name, phase in phases.items():

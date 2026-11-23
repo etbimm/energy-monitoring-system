@@ -20,9 +20,13 @@ class _Session:
         self.row = row
         self.flushed = False
         self.committed = False
+        self.added = []
 
     async def execute(self, _stmt):
         return _Result(self.row)
+
+    def add(self, item):
+        self.added.append(item)
 
     async def flush(self):
         self.flushed = True
@@ -43,11 +47,17 @@ async def test_acknowledge_returns_updated_alarm_without_relisting():
     )
     device = SimpleNamespace(device_code="PM-X", name="Meter X")
     session = _Session((alarm, device))
+    admin = SimpleNamespace(id=1, username="admin")
 
-    result = await acknowledge_alarm(7, session)
+    result = await acknowledge_alarm(7, admin, session)
 
     assert result.id == "7"
     assert result.acknowledged is True
     assert result.device_id == "PM-X"
     assert result.device_name == "Meter X"
     assert session.flushed and session.committed
+    assert len(session.added) == 1
+    assert session.added[0].action == "alarm.acknowledge"
+    assert session.added[0].username == "admin"
+    assert session.added[0].target == "PM-X"
+    assert session.added[0].detail == {"alarm_id": 7, "severity": "warning"}

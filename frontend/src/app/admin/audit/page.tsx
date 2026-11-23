@@ -16,6 +16,7 @@ import { formatDateTime } from "@/lib/format";
 const ACTION_LABEL: Record<string, string> = {
   "auth.login": "Login",
   "auth.login_failed": "Login gagal",
+  "auth.logout": "Logout",
   "auth.change_password": "Ganti password",
   "user.create": "Buat akun",
   "user.update": "Ubah akun",
@@ -25,6 +26,7 @@ const ACTION_LABEL: Record<string, string> = {
   "device.update": "Ubah device",
   "device.activate": "Aktifkan device",
   "device.deactivate": "Nonaktifkan device",
+  "alarm.acknowledge": "Acknowledge alarm",
   "alarm_thresholds.update": "Ubah ambang alarm",
 };
 
@@ -82,7 +84,7 @@ function AuditLogView() {
     <>
       <PageHeader
         title="Audit Log"
-        description="Riwayat login dan perubahan konfigurasi administrator"
+        description="Riwayat login/logout, acknowledge alarm, dan perubahan administrator"
         action={
           <Button variant="secondary" onClick={() => void refresh()} disabled={loading}>
             <RefreshCw className="h-3.5 w-3.5" aria-hidden />

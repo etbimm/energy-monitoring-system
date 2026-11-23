@@ -13,6 +13,13 @@ def _mean(values: list[float | None]) -> float | None:
     return round(sum(present) / len(present) * 1000) / 1000
 
 
+def _sum_present(values: list[float | None]) -> float | None:
+    present = [v for v in values if v is not None]
+    if not present:
+        return None
+    return round(sum(present) * 1000) / 1000
+
+
 def _get(decoded: dict[str, float], *keys: str) -> float | None:
     for key in keys:
         if key in decoded:
@@ -59,6 +66,22 @@ def to_telemetry(
             decoded.get("current_l3"),
         ]
     )
+    energy_active = _sum_present(
+        [decoded.get("energy_active_t1"), decoded.get("energy_active_t2")]
+    )
+    if energy_active is None:
+        energy_active = decoded.get("energy_active")
+    energy_reactive = _sum_present(
+        [decoded.get("energy_reactive_t1"), decoded.get("energy_reactive_t2")]
+    )
+    if energy_reactive is None:
+        energy_reactive = decoded.get("energy_reactive")
+    # ELITE440 supplies native apparent-energy counters. Sum import and export
+    # when both are present; other meters continue to derive kVAh downstream.
+    energy_apparent = _sum_present(
+        [decoded.get("energy_apparent_import"), decoded.get("energy_apparent_export")]
+    )
+    status_flags = decoded.get("status_flags")
 
     thd_current = _optional(
         _mean(
@@ -119,12 +142,22 @@ def to_telemetry(
         "power": decoded.get("power"),
         "apparent_power": decoded.get("apparent_power"),
         "reactive_power": decoded.get("reactive_power"),
-        "energy_active": decoded.get("energy_active"),
-        "energy_reactive": decoded.get("energy_reactive"),
+        "energy_active": energy_active,
+        "energy_reactive": energy_reactive,
+        "energy_apparent": energy_apparent,
         "frequency": decoded.get("frequency"),
         "thd_current": thd_current,
         "thd_voltage": thd_voltage,
         "unbalance_voltage": unbalance_voltage,
         "unbalance_current": unbalance_current,
+        # ELITE440 exposes only active status bits, not numeric unbalance values.
+        **(
+            {
+                "unbalance_voltage_flag": bool(int(status_flags) & (1 << 4)),
+                "unbalance_current_flag": bool(int(status_flags) & (1 << 14)),
+            }
+            if status_flags is not None
+            else {}
+        ),
         "phases": phases,
     }

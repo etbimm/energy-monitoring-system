@@ -72,9 +72,14 @@ def test_every_profile_has_catalog_entry_and_defaults():
     assert set(MODEL_CATALOG) == set(PROFILES)
     caps = default_capabilities("SIEMENS PAC3220")
     assert caps["perPhase"] and caps["maxHarmonicOrder"] == 40
+    assert caps["apparentEnergyRegister"] and caps["demand"]
     # Salinan baru setiap kali: mengubah hasil tidak mengubah katalog.
     caps["perPhase"] = False
     assert MODEL_CATALOG["SIEMENS PAC3220"]["capabilities"]["perPhase"] is True
+    lovato_caps = default_capabilities("LOVATO DMG510")
+    assert lovato_caps["apparentEnergyRegister"] and lovato_caps["unbalance"]
+    acrel_caps = default_capabilities("ACREL AMC96")
+    assert acrel_caps["unbalance"] and acrel_caps["demand"]
 
 
 @pytest.mark.parametrize("username", ["ab", "nama spasi", "a" * 33, "admin!"])

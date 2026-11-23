@@ -5,13 +5,13 @@ Dashboard monitoring energi untuk 18 power meter di Java Wood Pellet.
 ## Alur Data
 
 ```
-Power Meter (Modbus RTU / TCP)
-  -> RS485 to Ethernet Converter (meter RS485)
-  -> Switch / Network
-  -> Acquisition (Python + pymodbus, decode per model)
-  -> MQTT Broker (Mosquitto)
-  -> Backend API (FastAPI) + PostgreSQL/TimescaleDB
-  -> Frontend Dashboard (Next.js)
+Power Meter --Modbus TCP via gateway (mode modbus)--> Acquisition worker
+Simulator -------------------------------------------> Acquisition worker
+Acquisition worker --telemetry + status-------------> MQTT Broker (Mosquitto)
+MQTT Broker --telemetry-----------------------------> Backend API (FastAPI)
+PostgreSQL / TimescaleDB --konfigurasi meter aktif-> Acquisition worker
+Backend API --pembacaan, alarm, pengguna, agregat---> PostgreSQL / TimescaleDB
+Frontend (Next.js) --REST + WebSocket, wajib login--> Backend API
 ```
 
 ## Struktur Folder
@@ -51,6 +51,7 @@ Semua halaman dashboard dan endpoint data wajib login. Akun dibuat oleh admin
 | Acknowledge alarm | ❌ | ✅ |
 | Kelola akun (tambah, ubah role, nonaktifkan, hapus, reset password) | ❌ | ✅ |
 | Kelola device (tambah, edit, nonaktifkan) | ❌ | ✅ |
+| Kelola ambang alarm | ❌ | ✅ |
 | Audit log | ❌ | ✅ |
 | Ganti password sendiri | ✅ | ✅ |
 

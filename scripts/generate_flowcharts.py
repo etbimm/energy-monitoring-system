@@ -9,6 +9,8 @@ Hasil ditulis ke docs/flowchart/.
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from dataclasses import dataclass, field
 from html import escape
 from pathlib import Path
@@ -286,6 +288,58 @@ def drawio_page(chart: Chart, index: int) -> str:
     )
 
 
+def drawio_document(chart: Chart, index: int) -> str:
+    return (
+        '<mxfile host="app.diagrams.net" type="device">'
+        + drawio_page(chart, index)
+        + "</mxfile>"
+    )
+
+
+def _browser() -> str | None:
+    candidates = [
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    ]
+    for path in candidates:
+        if Path(path).exists():
+            return path
+    return shutil.which("chromium") or shutil.which("google-chrome") or shutil.which("msedge")
+
+
+def to_png(svg_path: Path, png_path: Path, chart: Chart) -> bool:
+    browser = _browser()
+    if browser is None:
+        return False
+    temp_path = png_path.with_name(f".{png_path.stem}.tmp.png")
+    x0, y0, x1, y1 = bounds(chart)
+    width, height = x1 - x0, y1 - y0
+    try:
+        result = subprocess.run(
+            [
+                browser,
+                "--headless=new",
+                "--disable-gpu",
+                "--hide-scrollbars",
+                "--force-device-scale-factor=2",
+                f"--window-size={int(width)},{int(height)}",
+                f"--screenshot={temp_path}",
+                svg_path.resolve().as_uri(),
+            ],
+            check=False,
+            capture_output=True,
+            timeout=120,
+        )
+        if result.returncode != 0 or not temp_path.exists() or temp_path.stat().st_size == 0:
+            return False
+        temp_path.replace(png_path)
+        return True
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+
+
 # ---------------------------------------------------------------- isi flowchart
 def build() -> list[Chart]:
     charts: list[Chart] = []
@@ -295,23 +349,23 @@ def build() -> list[Chart]:
         "01-program-utama-akuisisi",
         "Flowchart Program Utama – Acquisition Worker",
         "Loop utama pembacaan power meter: memuat meter dari database, terhubung ke MQTT, "
-        "lalu melakukan polling setiap 5 detik dengan jadwal interval tetap.",
+        "memuat ulang konfigurasi setiap 60 detik, dan melakukan polling pada interval tetap.",
     )
     c.n("start", "T", 1, 0, "MULAI")
-    c.n("cfg", "P", 1, 1, "Baca konfigurasi .env\n(mode akuisisi, interval 5 s)")
+    c.n("cfg", "P", 1, 1, "Baca konfigurasi .env\n(mode, POLL_INTERVAL; default 5 s)")
     c.n("load", "DB", 1, 2, "Muat daftar power meter\naktif dari database")
     c.n("dbok", "D", 1, 3, "Database\nberhasil diakses?")
     c.n("dbwait", "P", 0, 3, "Laporkan error,\ntunggu 5 detik")
     c.n("mqtt", "IO", 1, 4, "Hubungkan ke MQTT broker\n(username & password)")
     c.n("mqok", "D", 1, 5, "Broker\nterhubung?")
-    c.n("mqwait", "P", 2, 5, "Laporkan error,\ntunggu 5 detik")
+    c.n("mqwait", "P", 2, 5, "Laporkan error,\nretry dengan backoff")
     c.n("cA3", "C", 2, 6, "A")
     c.n("cB", "C", 0, 6, "B")
     c.n("reload", "S", 1, 6, "Muat ulang daftar meter\n(setiap 60 detik)")
     c.n("group", "P", 1, 7, "Kelompokkan meter per\ngateway (host, port)")
     c.n("poll", "S", 1, 8, "Polling semua gateway\nsecara paralel")
     c.n("mqlost", "D", 1, 9, "Koneksi MQTT\nterputus?")
-    c.n("close", "P", 2, 9, "Tutup koneksi gateway,\nlaporkan error,\ntunggu 5 detik")
+    c.n("close", "P", 2, 9, "Tutup koneksi gateway,\nlaporkan error,\nretry dengan backoff")
     c.n("cA1", "C", 2, 10, "A")
     c.n("cA2", "C", 2, 2, "A")
     c.n("deadline", "P", 1, 10, "Hitung jadwal siklus berikutnya\n(waktu mulai + 5 detik)")
@@ -330,6 +384,7 @@ def build() -> list[Chart]:
     c.e("mqtt", "mqok")
     c.e("mqok", "mqwait", "Tidak", "r", "l")
     c.e("mqwait", "cA3")
+    c.e("cA3", "cA2")
     c.e("mqok", "reload", "Ya")
     c.e("cB", "reload", None, "r", "l")
     c.e("reload", "group")
@@ -337,6 +392,7 @@ def build() -> list[Chart]:
     c.e("poll", "mqlost")
     c.e("mqlost", "close", "Ya", "r", "l")
     c.e("close", "cA1")
+    c.e("cA1", "cA2")
     c.e("cA2", "load", None, "l", "r")
     c.e("mqlost", "deadline", "Tidak")
     c.e("deadline", "late")
@@ -345,6 +401,7 @@ def build() -> list[Chart]:
     c.e("late", "sleep", "Tidak")
     c.e("sleep", "stop")
     c.e("stop", "cB2", "Tidak", "l", "r")
+    c.e("cB2", "cB")
     c.e("stop", "end", "Ya")
     charts.append(c)
 
@@ -353,12 +410,12 @@ def build() -> list[Chart]:
         "02-subrutin-polling-meter",
         "Subrutin Polling Gateway dan Power Meter",
         "Dijalankan paralel untuk tiap gateway; meter dalam satu jalur RS485 dibaca berurutan, "
-        "hasilnya dipublikasikan ke MQTT.",
+        "hasilnya dipublikasikan ke MQTT. Model tanpa profil register hanya berstatus offline pada mode Modbus.",
     )
     c.n("start", "T", 1, 0, "MULAI\nPolling gateway")
     c.n("next", "P", 1, 1, "Ambil power meter berikutnya\npada gateway (berurutan)")
     c.n("sim", "D", 1, 2, "Mode\nsimulator?")
-    c.n("gen", "P", 0, 3, "Bangkitkan telemetry simulasi\n(energi = integrasi daya)")
+    c.n("gen", "P", 0, 3, "Bangkitkan telemetry simulasi\n(counter energi berlanjut)")
     c.n("read", "S", 1, 3, "Baca register Modbus\ndan decode")
     c.n("err", "D", 1, 4, "Terjadi error\nbaca / koneksi?")
     c.n("has", "D", 1, 5, "Payload\ntelemetry ada?")
@@ -391,7 +448,7 @@ def build() -> list[Chart]:
         "03-subrutin-baca-modbus",
         "Subrutin Baca Register Modbus dan Decode",
         "Membaca blok register satu meter melalui gateway RS485-to-Ethernet (Modbus TCP) "
-        "sesuai profil model, lalu decode dan normalisasi.",
+        "sesuai profil model yang didukung, lalu decode dan normalisasi. Koneksi gateway digunakan ulang.",
     )
     c.n("start", "T", 1, 0, "MULAI\nBaca meter")
     c.n("alive", "D", 1, 1, "Koneksi gateway\nmasih aktif?")
@@ -402,7 +459,7 @@ def build() -> list[Chart]:
     c.n("fc3", "IO", 0, 4, "Baca holding register\n(FC03)")
     c.n("fc4", "IO", 2, 4, "Baca input register\n(FC04)")
     c.n("resp", "D", 1, 5, "Respons\nerror?")
-    c.n("fail", "P", 3, 5, "Tutup koneksi,\nangkat error")
+    c.n("fail", "P", 3, 5, "Angkat error\nke poller")
     c.n("store", "P", 1, 6, "Simpan alamat awal\ndan data word")
     c.n("more", "D", 1, 7, "Masih ada\nblok register?")
     c.n("decode", "P", 1, 8, "Decode register: tipe data,\nskala, dan urutan word")
@@ -435,7 +492,7 @@ def build() -> list[Chart]:
         "04-program-backend-mqtt",
         "Flowchart Program Backend – Penerimaan Data MQTT",
         "Backend FastAPI menjalankan task latar (MQTT subscriber dan offline watcher) sambil melayani "
-        "REST API dan WebSocket.",
+        "REST API dan WebSocket. Subscriber melakukan reconnect dengan backoff; alarm offline diperiksa tiap 15 detik.",
     )
     c.n("start", "T", 1, 0, "MULAI\nBackend API")
     c.n("tasks", "P", 1, 1, "Jalankan task latar\ndan server HTTP")
@@ -443,15 +500,15 @@ def build() -> list[Chart]:
     c.n("watch", "S", 2, 1, "Offline watcher\n(setiap 15 detik)")
     c.n("conn", "IO", 1, 2, "Hubungkan ke MQTT broker &\nsubscribe ems/meter/+/telemetry")
     c.n("ok", "D", 1, 3, "Terhubung?")
-    c.n("wait", "IO", 0, 3, "Laporkan error ke Telegram,\ntunggu 5 detik")
+    c.n("wait", "IO", 0, 3, "Laporkan error,\nretry dengan backoff")
     c.n("cA", "C", 0, 4, "A")
     c.n("recv", "IO", 1, 4, "Terima pesan telemetry\ndari MQTT")
     c.n("json", "D", 1, 5, "Payload JSON\nvalid?")
-    c.n("bad", "IO", 2, 5, "Laporkan payload tidak\nvalid (Telegram)")
+    c.n("bad", "IO", 2, 5, "Laporkan payload invalid\n(Telegram bila aktif)")
     c.n("cA3", "C", 2, 6, "A")
     c.n("ingest", "S", 1, 6, "Ingest telemetry\n(simpan & broadcast)")
     c.n("saved", "D", 1, 7, "Penyimpanan\nberhasil?")
-    c.n("dberr", "IO", 2, 7, "Laporkan error database\n(Telegram)")
+    c.n("dberr", "IO", 2, 7, "Laporkan error database\n(Telegram bila aktif)")
     c.n("lost", "D", 1, 8, "Koneksi MQTT\nterputus?")
     c.n("stop", "D", 1, 9, "Layanan\ndihentikan?")
     c.n("cA2", "C", 0, 9, "A")
@@ -483,24 +540,24 @@ def build() -> list[Chart]:
     c = Chart(
         "05-subrutin-ingest-telemetry",
         "Subrutin Ingest Telemetry",
-        "Memvalidasi meter, menghitung nilai turunan (PF, kVAh), menyimpan ke PostgreSQL/TimescaleDB, "
-        "mengevaluasi alarm, lalu menyiarkan data ke dashboard.",
+        "Mengabaikan device tidak dikenal/nonaktif; deduplikasi baris DB, hitung PF/kVAh, "
+        "menyimpan pembacaan, mengevaluasi alarm, lalu menyiarkan data ke dashboard.",
     )
     c.n("start", "T", 1, 0, "MULAI\nIngest telemetry")
     c.n("code", "D", 1, 1, "device_code\nada?")
     c.n("find", "DB", 1, 2, "Cari meter berdasarkan\ndevice_code")
-    c.n("known", "D", 1, 3, "Meter\nterdaftar?")
+    c.n("known", "D", 1, 3, "Meter\nterdaftar & aktif?")
     c.n("ignore", "T", 2, 3, "KEMBALI\n(diabaikan)")
     c.n("ts", "P", 1, 4, "Parse timestamp\n(kosong → waktu sekarang UTC)")
     c.n("prev", "DB", 1, 5, "Ambil pembacaan sebelumnya\n(kWh, kVAh, PF)")
-    c.n("calc", "P", 1, 6, "Hitung PF = |P / S|,\nkVAh += ΔkWh / PF rata-rata")
+    c.n("calc", "P", 1, 6, "Hitung PF; integrasikan kVAh\nΔkWh / PF rata-rata")
     c.n("cA", "C", 1, 7, "A")
     c.n("cA2", "C", 3, 0, "A")
-    c.n("save", "DB", 3, 1, "Simpan readings & phase_readings\n(abaikan data duplikat)")
+    c.n("save", "DB", 3, 1, "INSERT readings & phase_readings\n(duplikat diabaikan)")
     c.n("seen", "P", 3, 2, "Perbarui last_seen_at,\nhapus alarm offline terbuka")
     c.n("alarm", "S", 3, 3, "Evaluasi alarm\n(delay & hysteresis)")
     c.n("commit", "DB", 3, 4, "Commit transaksi\ndatabase")
-    c.n("notify", "IO", 3, 5, "Kirim notifikasi alarm kritis\n/ pulih ke Telegram")
+    c.n("notify", "IO", 3, 5, "Notifikasi kritis/pulih\n(Telegram bila aktif)")
     c.n("snap", "P", 3, 6, "Simpan snapshot & status\nmeter terbaru di Hub")
     c.n("ws", "IO", 3, 7, "Broadcast telemetry ke semua\nklien WebSocket")
     c.n("end", "T", 3, 8, "KEMBALI")
@@ -522,8 +579,8 @@ def build() -> list[Chart]:
     c = Chart(
         "06-subrutin-evaluasi-alarm",
         "Subrutin Evaluasi Alarm",
-        "Alarm dibuat bila kondisi abnormal bertahan ≥ 30 detik dan dinyatakan normal bila kondisi "
-        "normal (di luar deadband) bertahan ≥ 30 detik.",
+        "Ambang dimuat dari database dan dapat dikelola Admin. Alarm baru/pulih mengikuti delay "
+        "konfigurasi serta deadband (hysteresis); notifikasi dikirim setelah transaksi.",
     )
     c.n("start", "T", 1, 0, "MULAI\nEvaluasi alarm")
     c.n("check", "P", 1, 1, "Periksa PF, tegangan, frekuensi,\nTHD-I, unbalance, dan beban")
@@ -568,23 +625,23 @@ def build() -> list[Chart]:
     c = Chart(
         "07-subrutin-offline-watcher",
         "Subrutin Offline Watcher",
-        "Memeriksa umur data setiap meter setiap 15 detik: > 30 detik warning, > 180 detik critical "
-        "dan dikirim notifikasi Telegram.",
+        "Memeriksa umur data setiap 15 detik: bawaan > 30 detik warning dan > 180 detik critical; "
+        "meter tanpa last_seen_at langsung critical. Error reporter mendeduplikasi notifikasi.",
     )
     c.n("start", "T", 1, 0, "MULAI\nOffline watcher")
-    c.n("sleep", "P", 1, 1, "Tunggu 15 detik")
+    c.n("sleep", "P", 1, 1, "Tunggu 15 detik\n(ambang dapat dikonfigurasi)")
     c.n("load", "DB", 1, 2, "Ambil daftar power meter aktif")
     c.n("next", "P", 1, 3, "Ambil meter berikutnya")
     c.n("never", "D", 1, 4, "last_seen_at\nkosong?")
     c.n("crit", "P", 2, 5, "Set alarm offline\nCRITICAL")
-    c.n("mark", "P", 3, 5, "Tandai untuk notifikasi\nTelegram")
+    c.n("mark", "P", 3, 5, "Catat meter untuk notifikasi\nbila critical")
     c.n("age", "P", 1, 5, "Hitung umur data =\nsekarang − last_seen_at")
     c.n("gt180", "D", 1, 6, "Umur > 180\ndetik?")
     c.n("gt30", "D", 1, 7, "Umur > 30\ndetik?")
     c.n("warn", "P", 2, 7, "Set alarm offline\nWARNING")
     c.n("more", "D", 1, 8, "Masih ada\nmeter?")
     c.n("commit", "DB", 1, 9, "Commit perubahan alarm")
-    c.n("tg", "IO", 1, 10, "Kirim notifikasi meter\noffline ke Telegram")
+    c.n("tg", "IO", 1, 10, "Laporkan offline kritis\n(Telegram bila aktif)")
     c.n("stop", "D", 1, 11, "Layanan\ndihentikan?")
     c.n("end", "T", 1, 12, "SELESAI")
     c.e("start", "sleep")
@@ -613,16 +670,16 @@ def build() -> list[Chart]:
     c = Chart(
         "08-program-frontend-dashboard",
         "Flowchart Program Frontend – Dashboard",
-        "Dashboard Next.js memuat data lewat REST, lalu memperbarui tampilan secara realtime lewat "
-        "WebSocket dengan sinkronisasi REST berkala setiap 60 detik.",
+        "Halaman data memerlukan login. WebSocket memperbarui telemetry; alarm memicu sinkronisasi REST. "
+        "REST penuh berjalan tiap 60 detik dan meter baru memicu sinkronisasi terbatas tiap 10 detik.",
     )
-    c.n("start", "T", 1, 0, "MULAI\nBuka dashboard")
+    c.n("start", "T", 1, 0, "MULAI\nBuka dashboard (login)")
     c.n("fetch", "IO", 1, 1, "Ambil data meter & ringkasan\n(GET /api/devices, /api/summary)")
-    c.n("ok", "D", 1, 2, "Request\nberhasil?")
+    c.n("ok", "D", 1, 2, "Request REST\nberhasil?")
     c.n("has", "D", 1, 3, "Data meter\ntersedia?")
-    c.n("demo", "D", 2, 3, "Mode demo\naktif?")
+    c.n("demo", "D", 2, 3, "NEXT_PUBLIC_DEMO_MODE\naktif?")
     c.n("sim", "P", 3, 3, "Tampilkan data simulasi\n+ tanda Mode demo")
-    c.n("errm", "IO", 2, 4, "Tampilkan pesan error\n(tanpa angka palsu)")
+    c.n("errm", "IO", 2, 4, "Tampilkan data kosong\n+ pesan error (tanpa demo)")
     c.n("show", "IO", 1, 4, "Tampilkan KPI, grafik,\ndan status meter")
     c.n("ws", "IO", 1, 5, "Hubungkan WebSocket /ws")
     c.n("wsok", "D", 1, 6, "WebSocket\nterhubung?")
@@ -630,17 +687,17 @@ def build() -> list[Chart]:
     c.n("recv", "IO", 1, 7, "Terima pesan realtime\n(snapshot / telemetry / alarm)")
     c.n("type", "D", 1, 8, "Jenis pesan\nalarm?")
     c.n("cA1", "C", 2, 8, "A")
-    c.n("queue", "P", 1, 9, "Antrekan pesan per meter,\nterapkan tiap 1 detik")
+    c.n("queue", "P", 1, 9, "Antrekan telemetry per meter,\nterapkan tiap 1 detik")
     c.n("newdev", "D", 1, 10, "Ada meter\nbaru?")
     c.n("cA2", "C", 2, 10, "A")
     c.n("update", "IO", 1, 11, "Perbarui tampilan realtime\n(daya, tegangan, status)")
-    c.n("sync", "D", 1, 12, "Sudah 60 detik\nsejak sinkron?")
+    c.n("sync", "D", 1, 12, "Sudah 60 detik\nsejak sinkron REST penuh?")
     c.n("cA3", "C", 2, 12, "A")
     c.n("close", "D", 1, 13, "Halaman\nditutup?")
     c.n("cB", "C", 0, 13, "B")
     c.n("cB2", "C", 0, 7, "B")
     c.n("cA4", "C", 3, 8, "A")
-    c.n("resync", "IO", 3, 9, "Sinkron ulang data via REST\n(GET devices & summary)")
+    c.n("resync", "IO", 3, 9, "Sinkron ulang via REST\n(alarm, meter baru / jadwal)")
     c.n("cB3", "C", 3, 10, "B")
     c.n("end", "T", 1, 14, "SELESAI")
     c.e("start", "fetch")
@@ -663,14 +720,19 @@ def build() -> list[Chart]:
     c.e("wsok", "recv", "Ya")
     c.e("recv", "type")
     c.e("type", "cA1", "Ya", "r", "l")
+    c.e("cA1", "cA4")
     c.e("type", "queue", "Tidak")
     c.e("queue", "newdev")
     c.e("newdev", "cA2", "Ya", "r", "l")
+    c.e("cA2", "cA4")
     c.e("newdev", "update", "Tidak")
     c.e("update", "sync")
     c.e("sync", "cA3", "Ya", "r", "l")
+    c.e("cA3", "cA4")
     c.e("sync", "close", "Tidak")
     c.e("close", "cB", "Tidak", "l", "r")
+    c.e("cB", "cB2")
+    c.e("cB3", "cB2")
     c.e("close", "end", "Ya")
     charts.append(c)
 
@@ -707,7 +769,7 @@ def build_html(charts: list[Chart]) -> str:
     toc = "".join(f'<li><a href="#{c.slug}">{escape(c.title)}</a></li>' for c in charts)
     sections = "".join(
         f'<section id="{c.slug}"><h2>{i}. {escape(c.title)}</h2><p>{escape(c.desc)}</p>'
-        f'<div class="fig">{to_svg(c)}</div><p class="file">File: <a href="{c.slug}.svg">{c.slug}.svg</a></p></section>'
+        f'<div class="fig">{to_svg(c)}</div><p class="file">File: <a href="svg/{c.slug}.svg">{c.slug}.svg</a></p></section>'
         for i, c in enumerate(charts, 1)
     )
     return f"""<!doctype html>
@@ -745,15 +807,26 @@ PostgreSQL/TimescaleDB, dan dashboard Next.js.</p>
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
+    (OUT / "drawio").mkdir(exist_ok=True)
+    (OUT / "png").mkdir(exist_ok=True)
+    (OUT / "svg").mkdir(exist_ok=True)
     charts = build()
-    for c in charts:
-        (OUT / f"{c.slug}.svg").write_text(to_svg(c), encoding="utf-8")
+    png_skipped = False
+    for index, c in enumerate(charts, 1):
+        svg_path = OUT / "svg" / f"{c.slug}.svg"
+        svg_path.write_text(to_svg(c), encoding="utf-8")
+        (OUT / "drawio" / f"{c.slug}.drawio").write_text(drawio_document(c, index), encoding="utf-8")
+        if not to_png(svg_path, OUT / "png" / f"{c.slug}.png", c):
+            png_skipped = True
     pages = "".join(drawio_page(c, i) for i, c in enumerate(charts, 1))
-    (OUT / "flowchart-ems.drawio").write_text(
-        f'<mxfile host="app.diagrams.net" type="device">{pages}</mxfile>', encoding="utf-8"
-    )
+    drawio = f'<mxfile host="app.diagrams.net" type="device">{pages}</mxfile>'
+    (OUT / "flowchart-ems.drawio").write_text(drawio, encoding="utf-8")
+    (OUT.parent / "program-flowcharts.drawio").write_text(drawio, encoding="utf-8")
     (OUT / "index.html").write_text(build_html(charts), encoding="utf-8")
-    print(f"{len(charts)} flowchart ditulis ke {OUT}")
+    print(
+        f"{len(charts)} flowchart ditulis ke {OUT}"
+        + (" (PNG dilewati: Edge/Chrome tidak tersedia atau gagal merender)" if png_skipped else "")
+    )
 
 
 if __name__ == "__main__":

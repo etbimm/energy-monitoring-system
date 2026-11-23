@@ -11,11 +11,12 @@ Parameter dibagi 3 lapis (detail & alasan di `parameter-specification.md`):
 | Lapis | Parameter | Sumber |
 |---|---|---|
 | **Inti** | V, I, kW, kVA, kVAR, kWh, kVARh, Hz | polled dari meter |
-| **Turunan** | PF, kVAh | dihitung backend: `PF = kW/kVA`, `kVAh = kWh/PF` |
+| **Turunan** | PF; kVAh bila tidak ada counter native | PF dihitung backend; kVAh diintegrasikan dari kWh/PF kecuali ELITE440 yang memakai counter native |
 | **Opsional** | THD-I, THD-U, unbalance V/I | polled, `NULL` bila tidak didukung |
 
-> **kVAh dan PF tidak pernah dipoll** — hanya 1 dari 5 model meter yang punya
-> register kVAh, dan definisi register PF berbeda antar model.
+> PF tidak pernah dipoll karena definisi register berbeda antar model. ELITE440
+> mempoll counter kVAh native; counter native pada PAC3220, DMG510, dan EM220
+> belum dipoll.
 
 Skala register per model ada di [`../backend/app/acquisition/profiles.py`](../backend/app/acquisition/profiles.py).
 Ringkasnya: PAC3220 & Elite440 = IEEE754 float, sisanya integer berskala
@@ -35,11 +36,14 @@ Ringkasnya: PAC3220 & Elite440 = IEEE754 float, sisanya integer berskala
 | model | TEXT | SIEMENS PAC3220 / LOVATO DMG510 / CEWE Elite440 / ACREL AMC96 / WEIDMULLER EM220 |
 | role | TEXT | incoming / outcoming / distribution, atau peran "Lainnya" (maks 40 karakter). Hanya `incoming` yang dihitung ke total pabrik |
 | modbus_host | TEXT | IP meter atau RS485-to-Ethernet converter |
+| modbus_port | INT | port Modbus TCP (default 502) |
 | modbus_address | INT | slave id Modbus |
 | transport | TEXT | rs485 / ethernet, atau jalur "Lainnya" (informasi; akuisisi selalu Modbus TCP ke host:port) |
 | capabilities | JSONB | kapabilitas efektif unit ini (per unit, bukan per model) |
+| rated_power_kw | DOUBLE | kapasitas nominal untuk evaluasi alarm beban |
 | is_active | BOOLEAN | masih dipakai atau tidak (nonaktif = tidak dibaca & tidak tampil, riwayat tetap) |
-| updated_at | TIMESTAMPTZ | terakhir diubah lewat halaman Kelola Device |
+| last_seen_at | TIMESTAMPTZ | waktu telemetry terakhir; dipakai untuk status dan alarm offline |
+| created_at / updated_at | TIMESTAMPTZ | waktu pembuatan dan perubahan terakhir |
 
 Alamat Modbus `(modbus_host, modbus_port, modbus_address)` unik di antara
 device aktif (index `uq_devices_modbus_active`). Device tidak pernah dihapus
@@ -92,11 +96,22 @@ Partition: 1 hari per chunk. Index `(device_id, time DESC)`.
 | Kolom | Tipe | Keterangan |
 |---|---|---|
 | id | SERIAL PK | |
-| device_id | INT FK | |
+| device_id | INT FK NULL | meter terkait; NULL diperbolehkan untuk alarm tanpa meter |
+| alarm_type | TEXT | jenis alarm |
 | severity | TEXT | critical / warning / info |
 | message | TEXT | |
 | acknowledged | BOOLEAN | sudah di-ack oleh operator |
+| acknowledged_at | TIMESTAMPTZ NULL | waktu acknowledge |
 | triggered_at | TIMESTAMPTZ | |
+| cleared_at | TIMESTAMPTZ NULL | waktu kondisi pulih |
+
+### alarm_settings
+
+| Kolom | Tipe | Keterangan |
+|---|---|---|
+| id | INT PK | satu baris pengaturan aktif (id = 1) |
+| thresholds | JSONB | ambang alarm yang dapat diubah admin |
+| updated_at | TIMESTAMPTZ | waktu perubahan terakhir |
 
 ### users
 
@@ -123,6 +138,14 @@ Partition: 1 hari per chunk. Index `(device_id, time DESC)`.
 | target | TEXT | username / kode device yang dikenai aksi |
 | detail | JSONB | perubahan `{field: {from, to}}` atau info tambahan (IP) |
 | created_at | TIMESTAMPTZ | |
+
+### notification_state
+
+| Kolom | Tipe | Keterangan |
+|---|---|---|
+| key | TEXT PK | kunci notifikasi aktif |
+| summary | TEXT | ringkasan error/alarm yang sudah dilaporkan |
+| active_since | TIMESTAMPTZ | waktu notifikasi menjadi aktif |
 
 ## Aturan Alarm (contoh, sesuaikan)
 
@@ -166,10 +189,14 @@ Tandai interval invalid, jangan simpan sebagai angka negatif.
 
 | Tingkat | Interval | Retensi | Dipakai untuk |
 |---|---|---|---|
-| Raw | 5 detik | 7 hari | real-time, deteksi anomali |
-| Intraday | 1 menit | 90 hari | grafik shift, laporan harian |
-| Aggregate | 15 menit | 2 tahun | grafik mingguan/bulanan |
-| Rollup | harian | ∞ | laporan, basis penalti PF |
+| Raw | 5 detik | kompresi 7 hari; retensi 90 hari | real-time, deteksi anomali |
+| Intraday | 1 menit | ∞ | grafik shift, query historis |
+| Aggregate | 15 menit | ∞ | rentang energi panjang dan query historis |
+| Rollup | harian | ∞ | energi harian, laporan |
+
+Data mentah `readings` dan `phase_readings` dikompresi setelah 7 hari dan
+dihapus setelah 90 hari. Continuous aggregate 1 menit, 15 menit, dan harian
+tidak memiliki kebijakan retensi.
 
 > Fitur estimasi biaya **tidak** diimplementasikan (permintaan pemilik proyek).
 > Data PF & kVARh tetap dikumpulkan karena berguna untuk pengajuan penalti PF
