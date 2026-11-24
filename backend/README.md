@@ -96,9 +96,14 @@ uvicorn app.main:app --reload --port 4000
 python -m app.acquisition
 ```
 
-Database dan Mosquitto tetap lewat `docker compose up db mqtt`. Broker MQTT
-wajib login, jadi set `MQTT_USERNAME` dan `MQTT_PASSWORD` (default compose:
-`ems` / `ems-mqtt`; ganti di `.env`).
+Database, Mosquitto, dan Redis tetap lewat `docker compose up db mqtt redis`.
+Redis dipakai untuk pembatasan login bersama lintas worker dan tidak
+dipublikasikan ke host. Backend yang dijalankan langsung di host memerlukan
+Redis yang dapat dijangkau melalui `REDIS_URL` (default
+`redis://localhost:6379/0`); login mengembalikan HTTP 503 bila Redis tidak
+tersedia. Dalam jendela 15 menit, throttle membatasi 5 kegagalan per kombinasi
+IP/akun, 20 per IP, 10 per akun, dan 10.000 secara global. Broker MQTT wajib
+login; gunakan akun sesuai konfigurasi di `.env`.
 
 ## Error log dan notifikasi Telegram
 

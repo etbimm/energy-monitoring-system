@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import math
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -35,6 +36,59 @@ PHASE_FIELDS = (
 )
 
 
+TELEMETRY_FIELDS = {
+    "device_code", "timestamp", "voltage", "voltage_ln", "voltage_ll", "current",
+    "power", "apparent_power", "reactive_power", "energy_active", "energy_reactive",
+    "energy_apparent", "frequency", "thd_current", "thd_voltage", "unbalance_voltage",
+    "unbalance_current", "unbalance_voltage_flag", "unbalance_current_flag", "phases",
+}
+
+
+def validate_telemetry(payload: object, expected_device_code: str | None = None) -> dict:
+    """Validate the MQTT telemetry contract before it can reach persistence."""
+    if not isinstance(payload, dict):
+        raise ValueError("Payload telemetry harus berupa object")
+    if set(payload) - TELEMETRY_FIELDS:
+        raise ValueError("Payload telemetry memiliki field yang tidak dikenal")
+    code = payload.get("device_code")
+    if not isinstance(code, str) or not code.strip():
+        raise ValueError("device_code wajib berupa string")
+    if expected_device_code is not None and code != expected_device_code:
+        raise ValueError("device_code tidak cocok dengan topic MQTT")
+    for key, value in payload.items():
+        if key in {"device_code", "timestamp", "phases"}:
+            continue
+        if key.endswith("_flag"):
+            if value is not None and not isinstance(value, bool):
+                raise ValueError(f"{key} harus berupa boolean")
+        elif value is not None and (
+            isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
+        ):
+            raise ValueError(f"{key} harus berupa angka finite atau null")
+    phases = payload.get("phases")
+    if phases is not None:
+        if not isinstance(phases, dict) or set(phases) - {"L1", "L2", "L3"}:
+            raise ValueError("phases harus object dengan kunci L1, L2, atau L3")
+        for phase_name, phase in phases.items():
+            if not isinstance(phase, dict) or set(phase) - set(PHASE_FIELDS):
+                raise ValueError(f"Data fasa {phase_name} tidak valid")
+            for key, value in phase.items():
+                if value is not None and (
+                    isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
+                ):
+                    raise ValueError(f"Nilai {key} pada {phase_name} harus angka finite atau null")
+    timestamp = payload.get("timestamp")
+    if timestamp is not None:
+        try:
+            ts = _parse_time(timestamp)
+        except (AttributeError, TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("timestamp telemetry tidak valid") from exc
+        now = datetime.now(timezone.utc)
+        if ts < now - timedelta(minutes=5) or ts > now + timedelta(minutes=1):
+            raise ValueError("timestamp telemetry di luar jendela waktu yang diizinkan")
+    return payload
+
+
 def reading_values(device_id: int, ts: datetime, payload: dict) -> dict:
     return {"time": ts, "device_id": device_id, **{f: payload.get(f) for f in READING_FIELDS}}
 
@@ -64,7 +118,10 @@ async def _previous_reading(session: AsyncSession, device_id: int, before: datet
     return PreviousReading(row.energy_active, row.energy_apparent, row.power_factor)
 
 
-async def ingest_telemetry(session: AsyncSession, payload: dict) -> dict | None:
+async def ingest_telemetry(
+    session: AsyncSession, payload: dict, expected_device_code: str | None = None
+) -> dict | None:
+    payload = validate_telemetry(payload, expected_device_code)
     code = payload.get("device_code")
     if not code:
         return None

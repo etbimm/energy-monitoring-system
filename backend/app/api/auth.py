@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from redis.exceptions import RedisError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +25,7 @@ from app.services.auth import (
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 INVALID_LOGIN = "Username atau password salah."
+log = logging.getLogger("ems.api.auth")
 
 
 def client_ip(request: Request) -> str:
@@ -62,7 +65,14 @@ async def login(
     session: AsyncSession = Depends(get_session),
 ) -> User:
     ip = client_ip(request)
-    wait = login_throttle.retry_after(ip, payload.username)
+    try:
+        wait = await login_throttle.retry_after(ip, payload.username)
+    except RedisError as exc:
+        log.exception("Redis login throttle tidak tersedia")
+        raise HTTPException(
+            status_code=503,
+            detail="Layanan login sementara tidak tersedia.",
+        ) from exc
     if wait:
         raise HTTPException(
             status_code=429,
@@ -76,12 +86,32 @@ async def login(
     # verify_password tetap dijalankan walau user tidak ada (waktu respons sama).
     valid = verify_password(payload.password, user.password_hash if user else None)
     if user is None or not valid or not user.is_active:
-        login_throttle.fail(ip, payload.username)
+        try:
+            wait = await login_throttle.fail(ip, payload.username)
+        except RedisError as exc:
+            log.exception("Redis login throttle tidak tersedia")
+            raise HTTPException(
+                status_code=503,
+                detail="Layanan login sementara tidak tersedia.",
+            ) from exc
         audit.record(session, None, "auth.login_failed", payload.username, {"ip": ip}, username=payload.username)
         await session.commit()
+        if wait:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Terlalu banyak percobaan login. Coba lagi dalam {wait} detik.",
+                headers={"Retry-After": str(wait)},
+            )
         raise HTTPException(status_code=401, detail=INVALID_LOGIN)
 
-    login_throttle.reset(ip, payload.username)
+    try:
+        await login_throttle.reset(ip, payload.username)
+    except RedisError as exc:
+        log.exception("Redis login throttle tidak tersedia")
+        raise HTTPException(
+            status_code=503,
+            detail="Layanan login sementara tidak tersedia.",
+        ) from exc
     user.last_login_at = datetime.now(timezone.utc)
     audit.record(session, user, "auth.login", user.username, {"ip": ip})
     await session.commit()

@@ -1,0 +1,12 @@
+# Acquisition publishes meter telemetry and status only.
+user ems-acquisition
+topic write ems/meter/+/telemetry
+topic write ems/meter/+/status
+
+# Backend consumes telemetry only.
+user ems-backend
+topic read ems/meter/+/telemetry
+
+# Broker healthcheck has no application-topic access.
+user ems-health
+topic read $SYS/broker/uptime

@@ -1,4 +1,5 @@
 """Login, sesi JWT, dan pembatasan akses (tanpa database sungguhan)."""
+import math
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -6,11 +7,13 @@ import jwt
 import pytest
 from fastapi import HTTPException, Response
 from fastapi.testclient import TestClient
+from redis.exceptions import ConnectionError as RedisConnectionError
 from starlette.requests import Request
 
 from app import main
 from app.api import auth as auth_api
 from app.api import deps
+from app.schemas import LoginIn
 from app.services import auth
 
 
@@ -18,6 +21,71 @@ from app.services import auth
 def client():
     # Tanpa `with`: lifespan (MQTT, offline watcher) tidak dijalankan.
     return TestClient(main.app)
+
+
+class _FakeRedis:
+    def __init__(self):
+        self.zsets: dict[str, dict[str, int]] = {}
+        self.expires: dict[str, int] = {}
+
+    def _expire_and_prune(self, now_ms: int, window_ms: int, key: str) -> dict[str, int]:
+        for expired_key, expiry in list(self.expires.items()):
+            if now_ms >= expiry:
+                self.zsets.pop(expired_key, None)
+                self.expires.pop(expired_key, None)
+
+        entries = self.zsets.get(key, {})
+        cutoff = now_ms - window_ms
+        entries = {member: score for member, score in entries.items() if score > cutoff}
+        if entries:
+            self.zsets[key] = entries
+        else:
+            self.zsets.pop(key, None)
+        return entries
+
+    async def eval(self, script, numkeys, *args):
+        keys = list(args[:numkeys])
+        now_arg = args[numkeys]
+        now_ms = int(now_arg) if now_arg else 0
+        window_ms = int(args[numkeys + 1])
+
+        if script == auth._CHECK_FAILURES_SCRIPT:
+            limits = [int(value) for value in args[numkeys + 2 : numkeys + 2 + numkeys]]
+            wait_ms = 0
+            for key, limit in zip(keys, limits):
+                entries = self._expire_and_prune(now_ms, window_ms, key)
+                if len(entries) >= limit:
+                    oldest = min(entries.values())
+                    wait_ms = max(wait_ms, oldest + window_ms - now_ms)
+            return math.ceil(wait_ms / 1000)
+
+        if script == auth._RECORD_FAILURE_SCRIPT:
+            member = args[numkeys + 2]
+            limits = [int(value) for value in args[numkeys + 3 : numkeys + 3 + numkeys]]
+            wait_ms = 0
+            for key, limit in zip(keys, limits):
+                entries = self._expire_and_prune(now_ms, window_ms, key)
+                if len(entries) >= limit:
+                    oldest = min(entries.values())
+                    wait_ms = max(wait_ms, oldest + window_ms - now_ms)
+            if wait_ms > 0:
+                return math.ceil(wait_ms / 1000)
+            for key in keys:
+                self.zsets.setdefault(key, {})[member] = now_ms
+                self.expires[key] = now_ms + window_ms
+            return 0
+
+        raise AssertionError("Unexpected Redis script")
+
+    async def delete(self, key):
+        self.zsets.pop(key, None)
+        self.expires.pop(key, None)
+
+    async def ping(self):
+        return True
+
+    async def aclose(self):
+        return None
 
 
 def test_password_hash_roundtrip():
@@ -59,20 +127,93 @@ def test_token_rejects_expired_tampered_and_garbage():
         assert auth.decode_token(value) is None
 
 
-def test_login_throttle_blocks_after_limit_and_expires():
-    throttle = auth.LoginThrottle(limit=3, window=60)
+async def test_login_throttle_blocks_after_limit_and_expires():
+    throttle = auth.LoginThrottle(_FakeRedis(), limit=3, window=60)
     for t in range(3):
-        assert throttle.retry_after("1.1.1.1", "budi", now=t) == 0
-        throttle.fail("1.1.1.1", "budi", now=t)
-    assert throttle.retry_after("1.1.1.1", "budi", now=10) > 0
+        assert await throttle.retry_after("1.1.1.1", "budi", now=t) == 0
+        assert await throttle.fail("1.1.1.1", "budi", now=t) == 0
+    assert await throttle.retry_after("1.1.1.1", "budi", now=10) > 0
     # IP atau username lain tidak ikut terblokir.
-    assert throttle.retry_after("2.2.2.2", "budi", now=10) == 0
-    assert throttle.retry_after("1.1.1.1", "ani", now=10) == 0
+    assert await throttle.retry_after("2.2.2.2", "budi", now=10) == 0
+    assert await throttle.retry_after("1.1.1.1", "ani", now=10) == 0
     # Setelah jendela waktu lewat, boleh mencoba lagi.
-    assert throttle.retry_after("1.1.1.1", "budi", now=200) == 0
-    throttle.fail("1.1.1.1", "budi", now=200)
-    throttle.reset("1.1.1.1", "budi")
-    assert throttle.retry_after("1.1.1.1", "budi", now=201) == 0
+    assert await throttle.retry_after("1.1.1.1", "budi", now=200) == 0
+    await throttle.fail("1.1.1.1", "budi", now=200)
+    await throttle.reset("1.1.1.1", "budi")
+    assert await throttle.retry_after("1.1.1.1", "budi", now=201) == 0
+
+
+async def test_login_throttle_enforces_ip_and_account_limits():
+    throttle = auth.LoginThrottle(
+        _FakeRedis(),
+        limit=10,
+        ip_limit=2,
+        account_limit=2,
+        global_limit=100,
+        window=60,
+    )
+    await throttle.fail("10.0.0.1", "budi", now=0)
+    await throttle.fail("10.0.0.2", "budi", now=1)
+    assert await throttle.retry_after("10.0.0.3", "budi", now=2) > 0
+
+    await throttle.fail("10.0.0.1", "siti", now=2)
+    assert await throttle.retry_after("10.0.0.1", "andi", now=3) > 0
+    assert await throttle.retry_after("10.0.0.3", "andi", now=3) == 0
+
+
+async def test_login_throttle_global_limit_bounds_unique_key_churn():
+    redis = _FakeRedis()
+    throttle = auth.LoginThrottle(
+        redis,
+        limit=100,
+        ip_limit=100,
+        account_limit=100,
+        global_limit=5,
+        window=60,
+    )
+    for index in range(100):
+        wait = await throttle.fail(f"10.0.0.{index}", f"user-{index}", now=1)
+        assert (wait == 0) is (index < 5)
+
+    global_key = f"{throttle.key_prefix}:global"
+    assert len(redis.zsets[global_key]) == 5
+    assert len(redis.zsets) <= 16
+    assert all("user-" not in key and "10.0.0." not in key for key in redis.zsets)
+    assert await throttle.retry_after("new-ip", "new-user", now=2) > 0
+    assert await throttle.retry_after("new-ip", "new-user", now=61) == 0
+    assert global_key not in redis.zsets
+
+
+async def test_login_throttle_success_reset_clears_only_pair_bucket():
+    throttle = auth.LoginThrottle(
+        _FakeRedis(),
+        limit=2,
+        ip_limit=10,
+        account_limit=10,
+        global_limit=100,
+        window=60,
+    )
+    await throttle.fail("10.0.0.1", "budi", now=0)
+    await throttle.fail("10.0.0.1", "budi", now=1)
+    assert await throttle.retry_after("10.0.0.1", "budi", now=2) > 0
+
+    await throttle.reset("10.0.0.1", "budi")
+    assert await throttle.retry_after("10.0.0.1", "budi", now=2) == 0
+
+
+async def test_login_fails_closed_when_redis_is_unavailable(monkeypatch):
+    async def redis_unavailable(*_args, **_kwargs):
+        raise RedisConnectionError("redis down")
+
+    monkeypatch.setattr(auth_api.login_throttle, "retry_after", redis_unavailable)
+    request = Request({
+        "type": "http",
+        "headers": [],
+        "client": ("127.0.0.1", 12345),
+    })
+    with pytest.raises(HTTPException) as exc:
+        await auth_api.login(LoginIn(username="budi", password="rahasia123"), request, Response(), None)
+    assert exc.value.status_code == 503
 
 
 async def test_require_admin_rejects_viewer():

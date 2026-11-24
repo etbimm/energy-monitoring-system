@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
 
     database_url: str = "postgresql+asyncpg://ems:ems@localhost:5432/ems"
+    redis_url: str = "redis://localhost:6379/0"
 
     # Mode aplikasi: "development" atau "production". Di production, backend
     # menolak start bila JWT_SECRET belum diisi (lihat validator di bawah).

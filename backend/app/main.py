@@ -19,6 +19,7 @@ from app.db import SessionLocal, get_session
 from app.models import Device
 from app.schemas import TelemetryIn
 from app.services.alarms import set_offline_alarm
+from app.services.auth import login_throttle
 from app.services.error_reporting import error_reporter, report_error, resolve_error
 from app.services.ingest import ingest_telemetry
 from app.services.mqtt import mqtt_subscriber
@@ -92,6 +93,7 @@ async def lifespan(_app: FastAPI):
             await asyncio.wait_for(error_reporter.drain(), 5)
         except Exception:
             log.warning("Sebagian notifikasi Telegram belum terkirim saat shutdown")
+        await login_throttle.aclose()
 
 
 app = FastAPI(title="EMS API", version="0.1.0", lifespan=lifespan)
